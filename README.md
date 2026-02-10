@@ -1,4 +1,4 @@
-# Roadmap Agent (Local MVP)
+# Roadmap Agent 
 
 Local-first scaffold for roadmap tracking with:
 - 4 roles: `CEO`, `VP`, `BA`, `PM`
