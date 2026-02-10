@@ -210,6 +210,13 @@ type RoadmapPlanItem = {
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000'
 
+// Helper function to get project type color for Gantt bars
+function getProjectTypeColor(projectContext: string, deliveryMode: string): string {
+  if (deliveryMode === 'rnd') return '#7C3AED' // Purple for R&D
+  if (projectContext === 'client') return '#059669' // Green for Client
+  return '#D97706' // Orange for Internal
+}
+
 const rolePresets = [
   { label: 'CEO', email: 'ceo@local.test' },
   { label: 'VP', email: 'vp@local.test' },
@@ -2980,7 +2987,11 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
                 {left !== null && width !== null ? (
                   <span
                     className={`gantt-bar${item.planning_status === 'at_risk' ? ' at-risk' : ''}`}
-                    style={{ left: `${left}%`, width: `${width}%` }}
+                    style={{
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      backgroundColor: getProjectTypeColor(item.project_context, item.delivery_mode)
+                    }}
                   />
                 ) : (
                   <span className="gantt-placeholder" />

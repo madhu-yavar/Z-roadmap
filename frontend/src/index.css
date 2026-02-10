@@ -570,6 +570,35 @@ p {
   overflow-x: auto;
 }
 
+/* Fix clickable elements in tables - ensure they're above scrollbar overlay */
+.docs-table {
+  position: relative;
+}
+
+.docs-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--panel-alt);
+  z-index: 10;
+}
+
+.docs-table tbody tr {
+  position: relative;
+}
+
+.docs-table input[type="checkbox"],
+.docs-table button {
+  position: relative;
+  z-index: 5;
+}
+
+/* Ensure action column has enough space for scrollbar */
+.docs-table .col-action {
+  min-width: 150px;
+  width: 150px;
+  padding-right: 20px;
+}
+
 .stage-pill {
   display: inline-block;
   border: 1px solid var(--accent-light);
