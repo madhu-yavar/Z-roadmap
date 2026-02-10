@@ -3213,47 +3213,36 @@ function SettingsPage({
         )}
       </section>
 
-      <section className="panel-card">
-        <h3>Current Active Configuration</h3>
+      <section className="panel-card settings-section">
+        <h3>LLM Configurations</h3>
         {activeConfig ? (
-          <div className="line-item">
-            <span>{activeConfig.provider}</span>
-            <strong>{activeConfig.model}</strong>
+          <div className="settings-current">
+            <span className="settings-label">Active</span>
+            <div className="settings-config-inline">
+              <span className="config-provider-inline">{activeConfig.provider}</span>
+              <span className="config-model-inline">{activeConfig.model}</span>
+            </div>
           </div>
         ) : (
-          <p className="muted">No active model configured yet. Intake uses fallback extraction until configured.</p>
+          <div className="settings-current">
+            <span className="settings-label">Active</span>
+            <span className="settings-none">No active configuration</span>
+          </div>
         )}
-      </section>
-
-      <section className="panel-card">
-        <h3>Saved Configurations</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Provider</th>
-              <th>Model</th>
-              <th>Base URL</th>
-              <th>Active</th>
-            </tr>
-          </thead>
-          <tbody>
-            {llmConfigs.length === 0 && (
-              <tr>
-                <td colSpan={4} className="muted">
-                  No saved configurations yet.
-                </td>
-              </tr>
-            )}
-            {llmConfigs.map((cfg) => (
-              <tr key={cfg.id}>
-                <td>{cfg.provider}</td>
-                <td>{cfg.model}</td>
-                <td>{cfg.base_url || '-'}</td>
-                <td>{cfg.is_active ? 'yes' : 'no'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {llmConfigs.length > 0 && (
+          <div className="settings-saved">
+            <span className="settings-label">Saved</span>
+            <div className="settings-saved-list">
+              {llmConfigs.map((cfg) => (
+                <div key={cfg.id} className="settings-saved-item">
+                  <span className="config-provider-inline">{cfg.provider}</span>
+                  <span className="config-model-inline">{cfg.model}</span>
+                  {cfg.is_active && <span className="active-dot" title="Active"></span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
     </main>
   )
