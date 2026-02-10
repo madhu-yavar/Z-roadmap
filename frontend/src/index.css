@@ -602,17 +602,13 @@ p {
 
 /* Panel card overflow for tables */
 .panel-card {
-  overflow-x: auto;
+  overflow: visible;
 }
 
-/* Ensure table is clickable within panel card */
+/* Ensure table is properly contained within panel card */
 .panel-card:has(.docs-table) {
-  overflow-x: visible;
-}
-
-.panel-card:has(.docs-table) > .docs-table {
   overflow-x: auto;
-  display: block;
+  overflow-y: visible;
 }
 
 /* Ensure action column has enough space for scrollbar */
