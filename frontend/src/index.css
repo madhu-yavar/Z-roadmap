@@ -339,7 +339,7 @@ p {
   position: sticky;
   top: 0;
   background: var(--panel-alt);
-  z-index: 10;
+  z-index: 100;
 }
 
 .docs-table thead th {
@@ -358,7 +358,8 @@ p {
 .docs-table tbody tr {
   transition: background 0.15s ease;
   pointer-events: auto;
-  isolation: isolate;
+  position: relative;
+  z-index: 50;
 }
 
 .docs-table tbody tr:hover {
@@ -377,10 +378,19 @@ p {
 .docs-table input[type="checkbox"] {
   pointer-events: auto !important;
   cursor: pointer;
+  position: relative;
+  z-index: 200;
 }
 
 .docs-table button {
   pointer-events: auto !important;
+  position: relative;
+  z-index: 200;
+}
+
+.docs-table input[type="checkbox"]:hover,
+.docs-table button:hover {
+  z-index: 250;
 }
 
 .docs-table .doc-actions-inline {
@@ -595,37 +605,14 @@ p {
   overflow-x: auto;
 }
 
-/* Fix clickable elements in tables - ensure they're above scrollbar overlay */
-.docs-table {
-  position: relative;
+/* Ensure table is clickable within panel card */
+.panel-card:has(.docs-table) {
+  overflow-x: visible;
 }
 
-.docs-table thead {
-  position: sticky;
-  top: 0;
-  background: var(--panel-alt);
-  z-index: 1;
-}
-
-.docs-table tbody {
-  position: relative;
-  z-index: 2;
-}
-
-.docs-table tbody tr {
-  position: relative;
-}
-
-.docs-table input[type="checkbox"],
-.docs-table button {
-  position: relative;
-  z-index: 10;
-  cursor: pointer;
-}
-
-.docs-table input[type="checkbox"]:hover,
-.docs-table button:hover {
-  z-index: 15;
+.panel-card:has(.docs-table) > .docs-table {
+  overflow-x: auto;
+  display: block;
 }
 
 /* Ensure action column has enough space for scrollbar */
@@ -633,11 +620,12 @@ p {
   min-width: 150px;
   width: 150px;
   padding-right: 20px;
+  position: relative;
+  z-index: 150;
 }
 
-/* Ensure panel card doesn't block table interactions */
-.panel-card:has(.docs-table) {
-  isolation: isolate;
+.docs-table .col-action > * {
+  pointer-events: auto;
 }
 
 .stage-pill {

@@ -1645,6 +1645,7 @@ function IntakePage({
                     <button
                       className="ghost-btn tiny intake-action-btn"
                       type="button"
+                      disabled={busy || !token}
                       onClick={() => {
                         if (isCEO) {
                           setMetaModalDoc(row.doc)
