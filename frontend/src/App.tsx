@@ -1005,11 +1005,6 @@ function App() {
         </div>
       </header>
 
-      {/* Footer with copyright */}
-      <footer className="app-footer">
-        <p>Copyright © 2026 Yavar techworks Pte Ltd., All rights reserved.</p>
-      </footer>
-
       {error && <p className="error-banner">{error}</p>}
       {busy && (
         <div className="processing-indicator" role="status" aria-live="polite">
@@ -1153,6 +1148,11 @@ function App() {
           return data
         }}
       />
+
+      {/* Footer with copyright */}
+      <footer className="app-footer">
+        <p>Copyright © 2026 Yavar techworks Pte Ltd., All rights reserved.</p>
+      </footer>
     </div>
   )
 }
