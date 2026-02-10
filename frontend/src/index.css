@@ -231,9 +231,9 @@ p {
   flex: 1;
   max-width: 1260px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 20px;
   display: grid;
-  gap: 24px;
+  gap: 16px;
   width: 100%;
 }
 
@@ -296,7 +296,7 @@ p {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--panel);
-  padding: 20px;
+  padding: 16px;
   display: grid;
   gap: 16px;
   box-shadow: var(--shadow-sm);
@@ -317,22 +317,33 @@ p {
 }
 
 /* ========== Intake Queue Redesign ========== */
-/* Increase Intake Queue frame size */
+/* Intake Queue panels layout */
 .page-wrap > section.panel-card:first-of-type {
   grid-row: span 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-wrap > section.panel-card:nth-of-type(2) {
   grid-row: span 2;
   min-height: 600px;
+  padding: 16px;
 }
 
-/* Improved docs-table layout */
+/* Improved docs-table layout - no negative margins, proper fill */
 .docs-table {
   table-layout: auto;
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  margin: 0;
+}
+
+.panel-card > .line-item + .docs-table {
+  margin: 0;
+  width: 100%;
+  min-width: 100%;
 }
 
 .docs-table thead {
@@ -351,7 +362,7 @@ p {
 .docs-table th,
 .docs-table td {
   vertical-align: middle;
-  padding: 14px 12px;
+  padding: 10px 10px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -513,13 +524,13 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 0;
+  padding: 4px 0 8px 0;
   border-bottom: 1px solid var(--line);
-  margin-bottom: 16px;
+  margin-bottom: 8px;
 }
 
 .line-item h3 {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 700;
   color: var(--ink);
   margin: 0;
@@ -589,15 +600,8 @@ p {
 
 /* Table container within panel cards */
 .panel-card > table {
-  margin: -20px;
-  width: max-content;
-  min-width: calc(100% + 40px);
-}
-
-.panel-card > .line-item + table {
-  margin: -16px -20px -20px -20px;
-  width: max-content;
-  min-width: calc(100% + 40px);
+  margin: 0;
+  width: 100%;
 }
 
 /* Panel card overflow for tables */
