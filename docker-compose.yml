@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: roadmap-postgres
+    environment:
+      POSTGRES_DB: roadmap_agent
+      POSTGRES_USER: roadmap
+      POSTGRES_PASSWORD: roadmap
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
