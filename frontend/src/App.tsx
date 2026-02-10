@@ -11,6 +11,7 @@ import {
   YAxis,
 } from 'recharts'
 import { ChatWidget } from './ChatWidget'
+import { DetailedRoadmap } from './DetailedRoadmap'
 
 type Dashboard = {
   intake_total: number
@@ -908,7 +909,6 @@ function App() {
     setRoadmapItems([])
     setRoadmapPlanItems([])
     setLlmConfigs([])
-    setChatResponse(null)
     setIntakeHistory([])
     setSelectedAnalysis(null)
     setSelectedRoadmapIds([])
@@ -933,32 +933,35 @@ function App() {
   if (!isLoggedIn) {
     return (
       <div className="auth-shell">
-        <div className="auth-card">
-          <div className="auth-logo">Z</div>
-          <h1>Sign in to Roadmap Workspace</h1>
-          <p className="muted">Upload BRD/PPT/RFP/Excel, review extracted activities, then shape commitments.</p>
-          <div className="preset-row">
-            {rolePresets.map((preset) => (
-              <button key={preset.label} type="button" className="ghost-btn" onClick={() => setEmail(preset.email)}>
-                {preset.label}
+        <div className="auth-main">
+          <div className="auth-card">
+            <img className="brand-logo auth-brand-logo" src="/yavar-logo.svg" alt="Yavar" />
+            <h1>Sign in to Z- Roadmap Workspace</h1>
+            <p className="muted">Upload BRD/PPT/RFP/Excel, review extracted activities, then shape commitments.</p>
+            <div className="preset-row">
+              {rolePresets.map((preset) => (
+                <button key={preset.label} type="button" className="ghost-btn" onClick={() => setEmail(preset.email)}>
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <form className="stack" onSubmit={handleLogin}>
+              <label>
+                Email
+                <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ceo@local.test" />
+              </label>
+              <label>
+                Password
+                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="pass1234" />
+              </label>
+              <button disabled={busy} className="primary-btn" type="submit">
+                {busy ? 'Signing in...' : 'Sign In'}
               </button>
-            ))}
+            </form>
+            {error && <p className="error-text">{error}</p>}
           </div>
-          <form className="stack" onSubmit={handleLogin}>
-            <label>
-              Email
-              <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ceo@local.test" />
-            </label>
-            <label>
-              Password
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="pass1234" />
-            </label>
-            <button disabled={busy} className="primary-btn" type="submit">
-              {busy ? 'Signing in...' : 'Sign In'}
-            </button>
-          </form>
-          {error && <p className="error-text">{error}</p>}
         </div>
+        <footer className="auth-footer">Copyright © 2026 Yavar techworks Pte Ltd., All rights reserved.</footer>
       </div>
     )
   }
@@ -967,8 +970,8 @@ function App() {
     <div className="workspace">
       <header className="top-nav">
         <div className="top-left">
-          <div className="circle-logo">Z</div>
-          <span className="org-name">Roadmap Agent</span>
+          <img className="brand-logo top-brand-logo" src="/yavar-logo.svg" alt="Yavar" />
+          <span className="org-name">Z- Roadmap</span>
           <NavLink to="/dashboard" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
             Dashboard
           </NavLink>
@@ -981,16 +984,31 @@ function App() {
           <NavLink to="/roadmap-agent" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
             Roadmap
           </NavLink>
+          <NavLink to="/detailed-roadmap" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
+            Analytics
+          </NavLink>
         </div>
         <div className="top-right">
           <NavLink to="/settings" className={({ isActive }) => (isActive ? 'icon-link active' : 'icon-link')} title="Settings">
-            ⚙
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1.29 1.52 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
           </NavLink>
           <button onClick={logout} className="logout-min" type="button" title="Logout">
-            ⎋
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
           </button>
         </div>
       </header>
+
+      {/* Footer with copyright */}
+      <footer className="app-footer">
+        <p>Copyright © 2026 Yavar techworks Pte Ltd., All rights reserved.</p>
+      </footer>
 
       {error && <p className="error-banner">{error}</p>}
       {busy && (
@@ -1092,6 +1110,10 @@ function App() {
           }
         />
         <Route
+          path="/detailed-roadmap"
+          element={<DetailedRoadmap roadmapPlanItems={roadmapPlanItems} busy={busy} />}
+        />
+        <Route
           path="/settings"
           element={
             <SettingsPage
@@ -1126,7 +1148,7 @@ function App() {
               },
               body: JSON.stringify({ question }),
             },
-            token
+            token ?? undefined
           )
           return data
         }}
@@ -1583,9 +1605,9 @@ function IntakePage({
                     />
                   </td>
                 )}
-                <td className="doc-name col-file">{row.doc.file_name}</td>
+                <td className="col-file" title={row.doc.file_name}>{row.doc.file_name}</td>
                 <td className="col-type"><span className="doc-chip">{row.doc.file_type.toUpperCase()}</span></td>
-                <td className="col-title">{row.title || <span className="muted">Pending</span>}</td>
+                <td className="col-title" title={row.title || 'Pending'}><span className="intake-title">{row.title || <span className="muted">Pending</span>}</span></td>
                 <td className="col-stage">
                   {row.status === 'understanding_pending' ? (
                     <span className="intake-stage-text">{prettyStage(row.status)}</span>
@@ -1595,7 +1617,7 @@ function IntakePage({
                     </span>
                   )}
                 </td>
-                <td className="col-bucket">{row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}</td>
+                <td className="col-bucket" title={row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}><span className="bucket-text">{row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}</span></td>
                 <td className="col-mode">{row.intake ? formatDeliveryMode(row.intake.delivery_mode) : '-'}</td>
                 <td className="col-priority">{row.intake ? row.intake.priority : '-'}</td>
                 <td className="col-activities">{row.activitiesCount > 0 ? row.activitiesCount : <span className="muted">None</span>}</td>
