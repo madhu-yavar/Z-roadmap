@@ -357,10 +357,35 @@ p {
 
 .docs-table tbody tr {
   transition: background 0.15s ease;
+  pointer-events: auto;
+  isolation: isolate;
 }
 
 .docs-table tbody tr:hover {
   background: var(--panel-alt);
+}
+
+.docs-table tbody tr td {
+  pointer-events: auto;
+}
+
+.docs-table tbody tr td * {
+  pointer-events: auto;
+}
+
+/* Extra specificity for inputs and buttons */
+.docs-table input[type="checkbox"] {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+
+.docs-table button {
+  pointer-events: auto !important;
+}
+
+.docs-table .doc-actions-inline {
+  pointer-events: auto;
+  isolation: isolate;
 }
 
 .docs-table .col-file {
@@ -579,7 +604,12 @@ p {
   position: sticky;
   top: 0;
   background: var(--panel-alt);
-  z-index: 10;
+  z-index: 1;
+}
+
+.docs-table tbody {
+  position: relative;
+  z-index: 2;
 }
 
 .docs-table tbody tr {
@@ -589,7 +619,13 @@ p {
 .docs-table input[type="checkbox"],
 .docs-table button {
   position: relative;
-  z-index: 5;
+  z-index: 10;
+  cursor: pointer;
+}
+
+.docs-table input[type="checkbox"]:hover,
+.docs-table button:hover {
+  z-index: 15;
 }
 
 /* Ensure action column has enough space for scrollbar */
@@ -597,6 +633,11 @@ p {
   min-width: 150px;
   width: 150px;
   padding-right: 20px;
+}
+
+/* Ensure panel card doesn't block table interactions */
+.panel-card:has(.docs-table) {
+  isolation: isolate;
 }
 
 .stage-pill {
