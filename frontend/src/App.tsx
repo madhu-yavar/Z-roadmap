@@ -1391,6 +1391,7 @@ function IntakePage({
   const navigate = useNavigate()
   const [metaModalDoc, setMetaModalDoc] = useState<DocumentItem | null>(null)
   const [manualModalOpen, setManualModalOpen] = useState(false)
+  const [uploadSidebarOpen, setUploadSidebarOpen] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewTitle, setPreviewTitle] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
@@ -1520,39 +1521,13 @@ function IntakePage({
   return (
     <main className="page-wrap">
       <section className="panel-card">
-        <h2>Intake</h2>
-        <p className="muted">Upload BRD/PPT/Excel/RFP, classify + extract, then review for project bucket placement.</p>
-
-        <form className="upload-inline" onSubmit={handleUpload}>
-          <label className="file-input-wrap">
-            <input
-              key={uploadPickerKey}
-              type="file"
-              multiple
-              onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-              required
-            />
-            <span>{uploadLabel}</span>
-          </label>
-          <input
-            className="upload-notes"
-            placeholder="Notes"
-            value={uploadNotes}
-            onChange={(e) => setUploadNotes(e.target.value)}
-          />
-          <button className="primary-btn" disabled={busy || uploadFiles.length === 0} type="submit">
-            Upload All
-          </button>
-          <button className="ghost-btn" type="button" onClick={() => setManualModalOpen(true)}>
-            Manual Entry
-          </button>
-        </form>
-        {uploadMessage && <div className="success-note">{uploadMessage}</div>}
-      </section>
-
-      <section className="panel-card">
         <div className="line-item">
-          <h3>Intake Queue</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h3>Intake Queue</h3>
+            <button className="ghost-btn small" type="button" onClick={() => setUploadSidebarOpen(true)}>
+              + Upload Files
+            </button>
+          </div>
           {isCEO && (
             <button
               className="ghost-btn tiny quiet-btn"
@@ -2294,6 +2269,52 @@ function IntakePage({
           </div>
         </div>
       )}
+
+      {/* Upload Sidebar */}
+      {uploadSidebarOpen && (
+        <div className="upload-sidebar-backdrop open" onClick={() => setUploadSidebarOpen(false)} />
+      )}
+      <div className={`upload-sidebar ${uploadSidebarOpen ? 'open' : 'closed'}`}>
+        <div className="upload-sidebar-header">
+          <h3>Upload Documents</h3>
+          <button className="icon-only" type="button" onClick={() => setUploadSidebarOpen(false)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="upload-sidebar-content">
+          <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
+            Upload BRD/PPT/Excel/RFP to classify and extract activities for project bucket placement.
+          </p>
+
+          <form className="upload-inline" onSubmit={handleUpload}>
+            <label className="file-input-wrap">
+              <input
+                key={uploadPickerKey}
+                type="file"
+                multiple
+                onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+                required
+              />
+              <span>{uploadLabel}</span>
+            </label>
+            <input
+              className="upload-notes"
+              placeholder="Notes"
+              value={uploadNotes}
+              onChange={(e) => setUploadNotes(e.target.value)}
+            />
+            <button className="primary-btn" disabled={busy || uploadFiles.length === 0} type="submit">
+              Upload All
+            </button>
+            <button className="ghost-btn" type="button" onClick={() => setManualModalOpen(true)}>
+              Manual Entry
+            </button>
+          </form>
+          {uploadMessage && <div className="success-note">{uploadMessage}</div>}
+        </div>
+      </div>
     </main>
   )
 }

@@ -235,6 +235,8 @@ p {
   display: grid;
   gap: 16px;
   width: 100%;
+  align-content: start;
+  min-height: 0;
 }
 
 .stats-row {
@@ -317,18 +319,22 @@ p {
 }
 
 /* ========== Intake Queue Redesign ========== */
-/* Intake Queue panels layout */
-.page-wrap > section.panel-card:first-of-type {
-  grid-row: span 1;
+/* Intake Queue panels layout - FLEXIBLE HEIGHT */
+/* Since upload panel is removed, first panel is now the queue table */
+.page-wrap > section.panel-card:first-child {
+  /* Queue table panel - expands to fill available space */
+  grid-row: auto;
+  min-height: 400px;
+  max-height: calc(100vh - 180px);
   padding: 16px;
   display: flex;
   flex-direction: column;
+  overflow: visible;
 }
 
-.page-wrap > section.panel-card:nth-of-type(2) {
-  grid-row: span 2;
-  min-height: 600px;
-  padding: 16px;
+/* Ensure table doesn't get cut off */
+.page-wrap > section.panel-card:has(.docs-table) {
+  overflow: visible;
 }
 
 /* Improved docs-table layout - no negative margins, proper fill */
@@ -338,12 +344,35 @@ p {
   border-collapse: separate;
   border-spacing: 0;
   margin: 0;
+  flex: 1;              /* NEW - grow to fill space */
+  min-height: 0;        /* NEW - allow shrinking */
+  overflow-y: auto;     /* NEW - scroll when content exceeds height */
+  overflow-x: visible;  /* Ensure horizontal content is visible */
 }
 
 .panel-card > .line-item + .docs-table {
   margin: 0;
   width: 100%;
   min-width: 100%;
+  overflow-x: visible;
+  overflow-y: auto;
+}
+
+/* Table wrapper for proper flex scrolling */
+.panel-card:has(.docs-table) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-card:has(.docs-table) > .line-item {
+  flex-shrink: 0; /* Header never shrinks */
+}
+
+.panel-card:has(.docs-table) > .docs-table {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .docs-table thead {
@@ -357,12 +386,13 @@ p {
   white-space: nowrap;
   font-weight: 600;
   letter-spacing: 0.03em;
+  padding: 10px 10px;  /* Keep header larger */
 }
 
 .docs-table th,
 .docs-table td {
   vertical-align: middle;
-  padding: 10px 10px;
+  padding: 8px 10px;     /* was 10px 10px */
   border-bottom: 1px solid var(--line);
 }
 
@@ -507,8 +537,9 @@ p {
 }
 
 .docs-table .col-action {
-  min-width: 150px;
-  width: 150px;
+  min-width: 180px;
+  width: 180px;
+  padding-right: 10px;
 }
 
 /* Action buttons refinement */
@@ -527,6 +558,12 @@ p {
   padding: 4px 0 8px 0;
   border-bottom: 1px solid var(--line);
   margin-bottom: 8px;
+}
+
+/* ADD: Tighter Intake Queue header */
+.page-wrap > section.panel-card:nth-of-type(2) > .line-item {
+  padding: 0 0 10px 0;
+  margin-bottom: 12px;
 }
 
 .line-item h3 {
@@ -548,14 +585,14 @@ p {
 .upload-inline {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;           /* was 12px */
   flex-wrap: wrap;
-  padding: 4px 0;
+  padding: 2px 0;      /* was 4px 0 */
 }
 
 .file-input-wrap {
   flex: 1;
-  min-width: 200px;
+  min-width: 180px;     /* was 200px */
 }
 
 .file-input-wrap input {
@@ -564,7 +601,7 @@ p {
 
 .file-input-wrap span {
   display: inline-block;
-  padding: 10px 16px;
+  padding: 8px 14px;   /* was 10px 16px */
   border: 1px dashed var(--line);
   border-radius: var(--radius-md);
   background: var(--panel-alt);
@@ -582,8 +619,8 @@ p {
 
 .upload-notes {
   flex: 1;
-  min-width: 180px;
-  max-width: 300px;
+  min-width: 160px;     /* was 180px */
+  max-width: 280px;     /* was 300px */
 }
 
 /* Success note */
@@ -611,7 +648,7 @@ p {
 
 /* Ensure table is properly contained within panel card */
 .panel-card:has(.docs-table) {
-  overflow-x: auto;
+  overflow-x: visible;
   overflow-y: visible;
 }
 
@@ -1764,6 +1801,125 @@ button.icon-only:disabled:hover {
   padding: 16px;
 }
 
+/* ========== Upload Sidebar Panel ========== */
+.upload-sidebar-container {
+  position: fixed;
+  top: 64px;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.upload-sidebar {
+  position: fixed;
+  top: 64px;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: calc(100vw - 32px);
+  background: #fff;
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-xl);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.3s ease;
+  pointer-events: auto;
+  z-index: 1000;
+}
+
+.upload-sidebar.closed {
+  transform: translateX(100%);
+}
+
+.upload-sidebar.open {
+  transform: translateX(0);
+}
+
+.upload-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-alt);
+  flex-shrink: 0;
+}
+
+.upload-sidebar-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.upload-sidebar-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Upload form in sidebar */
+.upload-sidebar .upload-inline {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.upload-sidebar .file-input-wrap {
+  width: 100%;
+  min-width: 100%;
+}
+
+.upload-sidebar .file-input-wrap span {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.upload-sidebar .upload-notes {
+  width: 100%;
+  max-width: 100%;
+  min-width: 100%;
+}
+
+.upload-sidebar .success-note {
+  margin: 0;
+}
+
+/* Backdrop overlay */
+.upload-sidebar-backdrop {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.upload-sidebar-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Responsive adjustments for sidebar */
+@media (max-width: 768px) {
+  .upload-sidebar,
+  .upload-sidebar.open {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 .modal-card {
   width: min(460px, 100%);
   border: 1px solid var(--line);
@@ -2123,6 +2279,18 @@ th {
   }
 }
 
+/* Medium breakpoint - tablets */
+@media (max-width: 1200px) {
+  .page-wrap > section.panel-card:nth-of-type(2) {
+    max-height: calc(100vh - 200px);
+  }
+
+  .docs-table th,
+  .docs-table td {
+    white-space: normal;
+  }
+}
+
 @media (max-width: 960px) {
   .top-nav {
     height: auto;
@@ -2141,7 +2309,23 @@ th {
   }
 
   .page-wrap {
-    padding: 16px;
+    padding: 16px;      /* was 20px */
+    gap: 12px;          /* was 16px */
+  }
+
+  .page-wrap > section.panel-card:nth-of-type(2) {
+    max-height: none;
+    min-height: 300px;
+  }
+
+  .upload-inline {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .upload-notes {
+    max-width: 100%;
+    min-width: 100%;
   }
 
   .stats-row {
