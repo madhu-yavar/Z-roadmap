@@ -1529,7 +1529,7 @@ function IntakePage({
   return (
     <>
       <main className="page-wrap">
-        <section className="panel-card">
+        <section className="panel-card intake-queue-card">
         <div className="line-item">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <h3>Intake Queue</h3>
@@ -1548,110 +1548,112 @@ function IntakePage({
             </button>
           )}
         </div>
-        <table className="docs-table">
-          <thead>
-            <tr>
-              {isCEO && (
-                <th>
-                  <input
-                    type="checkbox"
-                    checked={allDocumentsSelected}
-                    onChange={(e) =>
-                      setSelectedDocumentIds(e.target.checked ? documents.map((doc) => doc.id) : [])
-                    }
-                  />
-                </th>
-              )}
-              <th className="col-file">File</th>
-              <th className="col-type">Type</th>
-                <th className="col-title">Title</th>
-                <th className="col-stage">Stage</th>
-                <th className="col-bucket">Bucket Type</th>
-                <th className="col-mode">Mode</th>
-                <th className="col-priority">Priority</th>
-                <th className="col-activities">Activities</th>
-                <th className="col-action">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {queueRows.length === 0 && (
+        <div className="intake-table-wrap">
+          <table className="docs-table">
+            <thead>
               <tr>
-                  <td colSpan={isCEO ? 10 : 9} className="muted">
-                    No documents uploaded yet.
-                  </td>
-                </tr>
-              )}
-            {queueRows.map((row) => (
-              <tr key={row.doc.id}>
                 {isCEO && (
-                  <td>
+                  <th>
                     <input
                       type="checkbox"
-                      checked={selectedDocumentIds.includes(row.doc.id)}
+                      checked={allDocumentsSelected}
                       onChange={(e) =>
-                        setSelectedDocumentIds((ids) =>
-                          e.target.checked ? [...new Set([...ids, row.doc.id])] : ids.filter((id) => id !== row.doc.id),
-                        )
+                        setSelectedDocumentIds(e.target.checked ? documents.map((doc) => doc.id) : [])
                       }
                     />
-                  </td>
+                  </th>
                 )}
-                <td className="col-file" title={row.doc.file_name}>{row.doc.file_name}</td>
-                <td className="col-type"><span className="doc-chip">{row.doc.file_type.toUpperCase()}</span></td>
-                <td className="col-title" title={row.title || 'Pending'}><span className="intake-title">{row.title || <span className="muted">Pending</span>}</span></td>
-                <td className="col-stage">
-                  {row.status === 'understanding_pending' ? (
-                    <span className="intake-stage-text">{prettyStage(row.status)}</span>
-                  ) : (
-                    <span className={`status-badge ${row.status === 'approved' ? 'approved' : row.status === 'draft' ? 'draft' : 'pending'}`}>
-                      {prettyStage(row.status)}
-                    </span>
-                  )}
-                </td>
-                <td className="col-bucket" title={row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}><span className="bucket-text">{row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}</span></td>
-                <td className="col-mode">{row.intake ? formatDeliveryMode(row.intake.delivery_mode) : '-'}</td>
-                <td className="col-priority">{row.intake ? row.intake.priority : '-'}</td>
-                <td className="col-activities">{row.activitiesCount > 0 ? row.activitiesCount : <span className="muted">None</span>}</td>
-                <td className="col-action">
-                  <div className="doc-actions-inline">
-                  <button
-                    className="ghost-btn tiny icon-only"
-                    type="button"
-                    title="View document"
-                    disabled={busy || !token}
-                    onClick={() => openPreview(row.doc)}
-                  >
-                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                      <path d="M12 5c5.5 0 9.9 4.3 11 6.8-1.1 2.5-5.5 6.7-11 6.7S2.1 14.3 1 11.8C2.1 9.3 6.5 5 12 5zm0 2C8.2 7 4.9 9.7 3.5 11.8 4.9 14 8.2 16.5 12 16.5s7.1-2.5 8.5-4.7C19.1 9.7 15.8 7 12 7zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6z" />
-                    </svg>
-                  </button>
-                  {!row.intake && (
-                    <button
-                      className="ghost-btn tiny intake-action-btn"
-                      type="button"
-                      disabled={busy || !token}
-                      onClick={() => {
-                        if (isCEO) {
-                          setMetaModalDoc(row.doc)
-                          return
-                        }
-                        void analyzeDocument(row.doc.id)
-                      }}
-                    >
-                      Understand
-                    </button>
-                  )}
-                  {row.intake && (
-                    <button className="intake-review-btn" type="button" onClick={() => startReview(row.intake!)}>
-                      Review
-                    </button>
-                  )}
-                  </div>
-                </td>
+                <th className="col-file">File</th>
+                <th className="col-type">Type</th>
+                  <th className="col-title">Title</th>
+                  <th className="col-stage">Stage</th>
+                  <th className="col-bucket">Bucket Type</th>
+                  <th className="col-mode">Mode</th>
+                  <th className="col-priority">Priority</th>
+                  <th className="col-activities">Activities</th>
+                  <th className="col-action">Action</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {queueRows.length === 0 && (
+                <tr>
+                    <td colSpan={isCEO ? 10 : 9} className="muted">
+                      No documents uploaded yet.
+                    </td>
+                  </tr>
+                )}
+              {queueRows.map((row) => (
+                <tr key={row.doc.id}>
+                  {isCEO && (
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedDocumentIds.includes(row.doc.id)}
+                        onChange={(e) =>
+                          setSelectedDocumentIds((ids) =>
+                            e.target.checked ? [...new Set([...ids, row.doc.id])] : ids.filter((id) => id !== row.doc.id),
+                          )
+                        }
+                      />
+                    </td>
+                  )}
+                  <td className="col-file" title={row.doc.file_name}>{row.doc.file_name}</td>
+                  <td className="col-type"><span className="doc-chip">{row.doc.file_type.toUpperCase()}</span></td>
+                  <td className="col-title" title={row.title || 'Pending'}><span className="intake-title">{row.title || <span className="muted">Pending</span>}</span></td>
+                  <td className="col-stage">
+                    {row.status === 'understanding_pending' ? (
+                      <span className="intake-stage-text">{prettyStage(row.status)}</span>
+                    ) : (
+                      <span className={`status-badge ${row.status === 'approved' ? 'approved' : row.status === 'draft' ? 'draft' : 'pending'}`}>
+                        {prettyStage(row.status)}
+                      </span>
+                    )}
+                  </td>
+                  <td className="col-bucket" title={row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}><span className="bucket-text">{row.intake ? formatBucketType(row.intake.project_context, row.intake.initiative_type) : '-'}</span></td>
+                  <td className="col-mode">{row.intake ? formatDeliveryMode(row.intake.delivery_mode) : '-'}</td>
+                  <td className="col-priority">{row.intake ? row.intake.priority : '-'}</td>
+                  <td className="col-activities">{row.activitiesCount > 0 ? row.activitiesCount : <span className="muted">None</span>}</td>
+                  <td className="col-action">
+                    <div className="doc-actions-inline">
+                    <button
+                      className="ghost-btn tiny icon-only"
+                      type="button"
+                      title="View document"
+                      disabled={busy || !token}
+                      onClick={() => openPreview(row.doc)}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M12 5c5.5 0 9.9 4.3 11 6.8-1.1 2.5-5.5 6.7-11 6.7S2.1 14.3 1 11.8C2.1 9.3 6.5 5 12 5zm0 2C8.2 7 4.9 9.7 3.5 11.8 4.9 14 8.2 16.5 12 16.5s7.1-2.5 8.5-4.7C19.1 9.7 15.8 7 12 7zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6z" />
+                      </svg>
+                    </button>
+                    {!row.intake && (
+                      <button
+                        className="ghost-btn tiny intake-action-btn"
+                        type="button"
+                        disabled={busy || !token}
+                        onClick={() => {
+                          if (isCEO) {
+                            setMetaModalDoc(row.doc)
+                            return
+                          }
+                          void analyzeDocument(row.doc.id)
+                        }}
+                      >
+                        Understand
+                      </button>
+                    )}
+                    {row.intake && (
+                      <button className="intake-review-btn" type="button" onClick={() => startReview(row.intake!)}>
+                        Review
+                      </button>
+                    )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="panel-card">

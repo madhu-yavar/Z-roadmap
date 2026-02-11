@@ -229,9 +229,9 @@ p {
 
 .page-wrap {
   flex: 1;
-  max-width: 1260px;
-  margin: 0 auto;
-  padding: 20px;
+  max-width: none;
+  margin: 0;
+  padding: 20px clamp(16px, 2.2vw, 32px);
   display: grid;
   gap: 16px;
   width: 100%;
@@ -319,67 +319,41 @@ p {
 }
 
 /* ========== Intake Queue Redesign ========== */
-/* Intake Queue panels layout - FLEXIBLE HEIGHT */
-/* Since upload panel is removed, first panel is now the queue table */
-.page-wrap > section.panel-card:first-child {
-  /* Queue table panel - expands to fill available space */
-  grid-row: auto;
+.intake-queue-card {
   min-height: 400px;
   max-height: calc(100vh - 180px);
-  padding: 16px;
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  overflow: hidden;
+  isolation: isolate;
 }
 
-/* Ensure table doesn't get cut off */
-.page-wrap > section.panel-card:has(.docs-table) {
-  overflow: visible;
+.intake-queue-card > .line-item {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 2;
+  background: var(--panel);
 }
 
-/* Improved docs-table layout - no negative margins, proper fill */
-.docs-table {
-  table-layout: auto;
+.intake-table-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.intake-table-wrap .docs-table {
   width: 100%;
+  table-layout: auto;
   border-collapse: separate;
   border-spacing: 0;
   margin: 0;
-  flex: 1;              /* NEW - grow to fill space */
-  min-height: 0;        /* NEW - allow shrinking */
-  overflow-y: auto;     /* NEW - scroll when content exceeds height */
-  overflow-x: visible;  /* Ensure horizontal content is visible */
 }
 
-.panel-card > .line-item + .docs-table {
-  margin: 0;
-  width: 100%;
-  min-width: 100%;
-  overflow-x: visible;
-  overflow-y: auto;
-}
-
-/* Table wrapper for proper flex scrolling */
-.panel-card:has(.docs-table) {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-.panel-card:has(.docs-table) > .line-item {
-  flex-shrink: 0; /* Header never shrinks */
-}
-
-.panel-card:has(.docs-table) > .docs-table {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.docs-table thead {
+.intake-table-wrap .docs-table thead th {
   position: sticky;
   top: 0;
   background: var(--panel-alt);
-  z-index: 100;
+  z-index: 3;
 }
 
 .docs-table thead th {
@@ -399,8 +373,6 @@ p {
 .docs-table tbody tr {
   transition: background 0.15s ease;
   pointer-events: auto;
-  position: relative;
-  z-index: 50;
 }
 
 .docs-table tbody tr:hover {
@@ -417,21 +389,12 @@ p {
 
 /* Extra specificity for inputs and buttons */
 .docs-table input[type="checkbox"] {
-  pointer-events: auto !important;
+  pointer-events: auto;
   cursor: pointer;
-  position: relative;
-  z-index: 200;
 }
 
 .docs-table button {
-  pointer-events: auto !important;
-  position: relative;
-  z-index: 200;
-}
-
-.docs-table input[type="checkbox"]:hover,
-.docs-table button:hover {
-  z-index: 250;
+  pointer-events: auto;
 }
 
 .docs-table .doc-actions-inline {
@@ -561,7 +524,7 @@ p {
 }
 
 /* ADD: Tighter Intake Queue header */
-.page-wrap > section.panel-card:nth-of-type(2) > .line-item {
+.intake-queue-card > .line-item {
   padding: 0 0 10px 0;
   margin-bottom: 12px;
 }
@@ -641,15 +604,9 @@ p {
   width: 100%;
 }
 
-/* Panel card overflow for tables */
+/* Panel cards should clip internal overflow by default */
 .panel-card {
-  overflow: visible;
-}
-
-/* Ensure table is properly contained within panel card */
-.panel-card:has(.docs-table) {
-  overflow-x: visible;
-  overflow-y: visible;
+  overflow: hidden;
 }
 
 /* Ensure action column has enough space for scrollbar */
@@ -657,8 +614,6 @@ p {
   min-width: 150px;
   width: 150px;
   padding-right: 20px;
-  position: relative;
-  z-index: 150;
 }
 
 .docs-table .col-action > * {
