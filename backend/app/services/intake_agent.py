@@ -106,9 +106,136 @@ ACTION_VERBS = {
     "align",
 }
 
+ALLOWED_ACTIVITY_TAGS = ("FE", "BE", "AI")
+
+ACTIVITY_TAG_HINTS = {
+    "FE": {
+        "ui",
+        "ux",
+        "frontend",
+        "front-end",
+        "screen",
+        "page",
+        "form",
+        "dashboard",
+        "portal",
+        "web",
+        "mobile",
+        "component",
+        "workflow view",
+        "chat interface",
+    },
+    "BE": {
+        "backend",
+        "back-end",
+        "api",
+        "service",
+        "endpoint",
+        "database",
+        "db",
+        "schema",
+        "auth",
+        "integration",
+        "queue",
+        "pipeline",
+        "storage",
+        "server",
+        "ingestion",
+        "orchestration",
+    },
+    "AI": {
+        "ai",
+        "ml",
+        "llm",
+        "model",
+        "prompt",
+        "embedding",
+        "classification",
+        "summarization",
+        "summarisation",
+        "extract",
+        "nlp",
+        "ocr",
+        "rag",
+        "inference",
+        "genai",
+    },
+}
+
+TAG_ALIASES = {
+    "FE": "FE",
+    "FRONTEND": "FE",
+    "FRONT-END": "FE",
+    "UI": "FE",
+    "UX": "FE",
+    "BE": "BE",
+    "BACKEND": "BE",
+    "BACK-END": "BE",
+    "API": "BE",
+    "SERVICE": "BE",
+    "AI": "AI",
+    "ML": "AI",
+    "LLM": "AI",
+    "GENAI": "AI",
+    "MODEL": "AI",
+}
+
 
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-zA-Z0-9]+", text.lower()) if len(t) > 2 and t not in STOPWORDS}
+
+
+def _normalize_activity_tag(tag: str) -> str:
+    raw = (tag or "").strip().upper()
+    raw = raw.replace("_", "-")
+    return TAG_ALIASES.get(raw, "")
+
+
+def _strip_activity_tags(text: str) -> str:
+    val = (text or "").strip()
+    return re.sub(r"^\[(?:FE|BE|AI)(?:/(?:FE|BE|AI))*\]\s*", "", val, flags=re.IGNORECASE)
+
+
+def _infer_activity_tags(activity: str) -> list[str]:
+    low = (activity or "").lower()
+    tags: list[str] = []
+    for lane in ALLOWED_ACTIVITY_TAGS:
+        hints = ACTIVITY_TAG_HINTS[lane]
+        if any(h in low for h in hints):
+            tags.append(lane)
+    if tags:
+        return tags[:3]
+    if any(h in low for h in ("screen", "dashboard", "ui", "form", "portal", "web", "mobile", "chat")):
+        return ["FE"]
+    if any(h in low for h in ("model", "ai", "ml", "llm", "ocr", "classification", "summar")):
+        return ["AI"]
+    return ["BE"]
+
+
+def _coerce_activity_tags(raw_tags: object, activity: str) -> list[str]:
+    if isinstance(raw_tags, list):
+        values = [str(x) for x in raw_tags]
+    elif isinstance(raw_tags, str):
+        values = [x for x in re.split(r"[,/|;+]", raw_tags) if x.strip()]
+    else:
+        values = []
+
+    tags: list[str] = []
+    for value in values:
+        norm = _normalize_activity_tag(value)
+        if norm and norm not in tags:
+            tags.append(norm)
+    if tags:
+        return tags[:3]
+    return _infer_activity_tags(activity)
+
+
+def _format_activity_with_tags(activity: str, tags: list[str] | None = None) -> str:
+    clean_activity = _strip_activity_tags(activity)
+    if not clean_activity:
+        return ""
+    lane_tags = _coerce_activity_tags(tags or [], clean_activity)
+    return f"[{'/'.join(lane_tags)}] {clean_activity}"
 
 
 def _looks_marketing(line: str) -> bool:
@@ -219,7 +346,7 @@ def _sanitize_title(text: str, fallback: str) -> str:
 
 
 def _sanitize_activity(activity: str) -> str:
-    cleaned = re.sub(r"^[-*•\d\.\)\s]+", "", (activity or "").strip())
+    cleaned = re.sub(r"^[-*•\d\.\)\s]+", "", _strip_activity_tags(activity))
     cleaned = re.sub(r"\s+", " ", cleaned)
     if not cleaned:
         return ""
@@ -296,7 +423,7 @@ def _valid_evidence_refs(evidence: list[str], units: list[dict]) -> list[str]:
 def _self_check(candidate: dict) -> bool:
     title_ok = 3 <= _word_count(candidate.get("title", "")) <= 6
     activities = candidate.get("activities") or []
-    acts_ok = len(activities) >= 2 and all(_word_count(a) <= 12 for a in activities)
+    acts_ok = len(activities) >= 2 and all(_word_count(_strip_activity_tags(a)) <= 12 for a in activities)
     quick_approve = bool(candidate.get("intent")) and bool(candidate.get("scope"))
     return title_ok and acts_ok and quick_approve
 
@@ -323,7 +450,8 @@ def _fallback_candidate(units: list[dict], file_name: str, file_type: str) -> di
             "Identify explicit business requirements",
             "Validate activity clusters with leadership",
         ]
-    activities = activities[:5]
+    target_count = min(12, max(3, len(activities)))
+    activities = [_format_activity_with_tags(a) for a in activities[:target_count]]
 
     candidate = {
         "title": title,
@@ -347,7 +475,7 @@ def _fallback_understanding(units: list[dict], file_name: str, file_type: str) -
         intent = "Document intent is unclear."
 
     outcomes = []
-    for activity in activities[:5]:
+    for activity in activities[:8]:
         line = _sanitize_outcome(activity.get("description", ""))
         if line:
             outcomes.append(line)
@@ -363,7 +491,7 @@ def _fallback_understanding(units: list[dict], file_name: str, file_type: str) -
         outcomes = ["Clarify business objective", "Confirm explicit expected outcomes"]
     return {
         "primary_intent": intent if is_clear else "Document intent is unclear.",
-        "explicit_outcomes": outcomes[:5],
+        "explicit_outcomes": outcomes[:8],
         "dominant_theme": dominant_theme[:80],
         "evidence": evidence,
         "confidence": "Medium" if is_clear else "Low",
@@ -410,10 +538,10 @@ def _normalize_understanding(data: dict, fallback: dict, units: list[dict]) -> d
             continue
         seen.add(k)
         outcomes.append(cleaned)
-        if len(outcomes) >= 5:
+        if len(outcomes) >= 8:
             break
     if len(outcomes) < 2:
-        outcomes = fallback["explicit_outcomes"][:5]
+        outcomes = fallback["explicit_outcomes"][:8]
 
     dominant_theme = str(
         data.get("Dominant capability/theme (1 phrase)")
@@ -484,19 +612,35 @@ def _normalize_candidate(data: dict, fallback: dict, units: list[dict], file_nam
         items = re.split(r"[\n,;]", str(raw_activities))
     seen: set[str] = set()
     for item in items:
-        act = _sanitize_activity(str(item))
+        raw_text = ""
+        raw_tags: object = []
+        if isinstance(item, dict):
+            raw_text = str(
+                item.get("activity")
+                or item.get("task")
+                or item.get("name")
+                or item.get("description")
+                or ""
+            )
+            raw_tags = item.get("tags") or item.get("tag") or []
+        else:
+            raw_text = str(item)
+
+        act = _sanitize_activity(raw_text)
         if not act or _is_forbidden_text(act):
             continue
         key = act.lower()
         if key in seen:
             continue
         seen.add(key)
-        candidate["activities"].append(act)
-        if len(candidate["activities"]) >= 5:
+        tagged = _format_activity_with_tags(act, _coerce_activity_tags(raw_tags, act))
+        if tagged:
+            candidate["activities"].append(tagged)
+        if len(candidate["activities"]) >= 12:
             break
 
     if len(candidate["activities"]) < 2:
-        candidate["activities"] = fallback["activities"][:5]
+        candidate["activities"] = fallback["activities"][:12]
 
     raw_evidence = data.get("Evidence") or data.get("evidence") or fallback["evidence"]
     refs: list[str] = []
@@ -517,7 +661,7 @@ def _normalize_candidate(data: dict, fallback: dict, units: list[dict], file_nam
         candidate["title"] = _sanitize_title(candidate["title"], Path(file_name).stem)
         candidate["intent"] = _single_sentence(candidate["intent"] or fallback["intent"])
         candidate["scope"] = _single_sentence(candidate["scope"] or fallback["scope"])
-        candidate["activities"] = (candidate["activities"] or fallback["activities"])[:5]
+        candidate["activities"] = (candidate["activities"] or fallback["activities"])[:12]
         candidate["evidence"] = candidate["evidence"] or fallback["evidence"]
 
     return candidate
@@ -768,7 +912,7 @@ Required output (JSON keys exactly):
 
 Rules:
 - Primary intent must be one sentence.
-- Explicit outcomes must be 2-5 bullets, concrete and explicit.
+- Explicit outcomes must be 2-8 bullets, concrete and explicit.
 - Dominant capability/theme must be one short phrase.
 - Evidence must be document references only (no copied paragraphs).
 - Confidence must be High / Medium / Low.
@@ -895,7 +1039,9 @@ Field rules:
 - Title: 3-6 words, noun phrase
 - Intent: one sentence, business reason
 - Scope: one sentence, boundary definition
-- Activities: 2-5 verb-led items, each <12 words
+- Activities: choose count based on document complexity (minimum 3, maximum 12), verb-led items, each <12 words
+- Activities format: list of objects with keys "activity" and "tags"
+- Tags must be one or more from: FE, BE, AI
 - Evidence: document references only (no quotes)
 - Confidence: High / Medium / Low
 

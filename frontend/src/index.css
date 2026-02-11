@@ -339,6 +339,8 @@ p {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .intake-table-wrap .docs-table {
@@ -503,6 +505,8 @@ p {
   min-width: 180px;
   width: 180px;
   padding-right: 10px;
+  position: relative;
+  z-index: 4;
 }
 
 /* Action buttons refinement */
@@ -511,6 +515,8 @@ p {
   align-items: center;
   gap: 8px;
   justify-content: flex-start;
+  position: relative;
+  z-index: 4;
 }
 
 /* Intake section header improvement */
@@ -1697,6 +1703,31 @@ button.icon-only:disabled:hover {
   fill: currentColor;
 }
 
+.preview-action-btn {
+  min-width: 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #d8deea;
+  border-radius: 8px;
+  background: #fff;
+  color: #596277;
+  display: inline-grid;
+  place-items: center;
+  transition: all 0.16s ease;
+}
+
+.preview-action-btn:hover:not(:disabled) {
+  border-color: var(--accent-light);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.preview-action-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
 .split-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1904,9 +1935,67 @@ button.icon-only:disabled:hover {
   box-shadow: var(--shadow-xl);
 }
 
+.metadata-modal {
+  width: min(640px, 96vw);
+  max-height: calc(100vh - 32px);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.metadata-modal .stack {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
 .doc-preview-modal {
   width: min(1000px, 96vw);
   max-height: 88vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.doc-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+.doc-preview-title-wrap {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.doc-preview-title-wrap h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.doc-preview-type {
+  display: inline-block;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 0.72rem;
+  color: var(--ink-light);
+  background: var(--panel-alt);
+}
+
+.doc-preview-body {
+  padding: 14px 16px 16px;
+  overflow: auto;
+  max-height: calc(88vh - 58px);
 }
 
 .doc-preview-frame {
@@ -1935,6 +2024,37 @@ button.icon-only:disabled:hover {
   overflow: auto;
   font-family: 'DM Mono', monospace;
   font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.doc-preview-units {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  overflow: auto;
+  max-height: 62vh;
+}
+
+.doc-preview-unit {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.doc-preview-unit:last-child {
+  border-bottom: 0;
+}
+
+.doc-preview-ref {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.72rem;
+  color: #7a8498;
+  margin-bottom: 4px;
+}
+
+.doc-preview-value {
+  color: var(--ink);
+  font-size: 0.88rem;
   line-height: 1.45;
   white-space: pre-wrap;
 }
@@ -2377,6 +2497,7 @@ th {
   flex-direction: column;
   align-items: flex-end;
   gap: 12px;
+  pointer-events: none;
 }
 
 .chat-toggle-btn {
@@ -2392,6 +2513,7 @@ th {
   display: grid;
   place-items: center;
   font-size: 24px;
+  pointer-events: auto;
 }
 
 .chat-toggle-btn:hover {

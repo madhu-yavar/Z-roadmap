@@ -157,11 +157,19 @@ def get_document_preview(
             return {"mode": "download_only", "file_type": ext}
         lines = [u.get("text", "").strip() for u in units if u.get("text")]
         preview_lines = [line for line in lines if line][:200]
+        preview_units = []
+        for u in units[:280]:
+            ref = str(u.get("ref", "")).strip()
+            text = str(u.get("text", "")).strip()
+            if not text:
+                continue
+            preview_units.append({"ref": ref, "text": text})
         return {
             "mode": "extracted_text",
             "file_type": ext,
             "preview_text": "\n".join(preview_lines),
             "line_count": len(preview_lines),
+            "preview_units": preview_units,
         }
 
     return {"mode": "download_only", "file_type": ext}

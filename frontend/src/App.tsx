@@ -1066,6 +1066,7 @@ function App() {
               bulkDeleteDocuments={bulkDeleteDocuments}
               busy={busy}
               fetchDocumentBlob={fetchDocumentBlob}
+              setErrorMessage={setError}
             />
           }
         />
@@ -1358,6 +1359,7 @@ type IntakeProps = {
   bulkDeleteDocuments: () => Promise<void>
   busy: boolean
   fetchDocumentBlob: (documentId: number) => Promise<{ blob: Blob; contentType: string }>
+  setErrorMessage: Dispatch<SetStateAction<string>>
 }
 
 function IntakePage({
@@ -1394,6 +1396,7 @@ function IntakePage({
   bulkDeleteDocuments,
   busy,
   fetchDocumentBlob,
+  setErrorMessage,
 }: IntakeProps) {
   const navigate = useNavigate()
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
@@ -1404,8 +1407,10 @@ function IntakePage({
   const [previewTitle, setPreviewTitle] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
   const [previewType, setPreviewType] = useState('')
+  const [previewFileType, setPreviewFileType] = useState('')
   const [previewMode, setPreviewMode] = useState<'inline_file' | 'extracted_text' | 'download_only'>('inline_file')
   const [previewText, setPreviewText] = useState('')
+  const [previewUnits, setPreviewUnits] = useState<Array<{ ref: string; text: string }>>([])
   const [previewError, setPreviewError] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
   const [intakeSeed, setIntakeSeed] = useState<IntakeSeedMeta>({
@@ -1487,12 +1492,33 @@ function IntakePage({
         ? uploadFiles[0].name
         : `${uploadFiles.length} files selected`
 
+  function seedFromIntake(item?: IntakeItem | null): IntakeSeedMeta {
+    return {
+      priority: item?.priority || 'medium',
+      project_context: item?.project_context || 'client',
+      initiative_type: item?.initiative_type || 'new_feature',
+      delivery_mode: item?.delivery_mode || 'standard',
+      rnd_hypothesis: item?.rnd_hypothesis || '',
+      rnd_experiment_goal: item?.rnd_experiment_goal || '',
+      rnd_success_criteria: item?.rnd_success_criteria || '',
+      rnd_timebox_weeks: item?.rnd_timebox_weeks ?? null,
+      rnd_decision_date: item?.rnd_decision_date || '',
+      rnd_next_gate: item?.rnd_next_gate || '',
+      rnd_risk_level: item?.rnd_risk_level || '',
+    }
+  }
+
   async function openPreview(doc: DocumentItem) {
     setPreviewError('')
     setPreviewLoading(true)
     try {
       if (previewUrl) URL.revokeObjectURL(previewUrl)
-      const meta = await api<{ mode: 'inline_file' | 'extracted_text' | 'download_only'; file_type: string; preview_text?: string }>(
+      const meta = await api<{
+        mode: 'inline_file' | 'extracted_text' | 'download_only'
+        file_type: string
+        preview_text?: string
+        preview_units?: Array<{ ref: string; text: string }>
+      }>(
         `/documents/${doc.id}/preview`,
         {},
         token || undefined,
@@ -1500,6 +1526,8 @@ function IntakePage({
       setPreviewTitle(doc.file_name)
       setPreviewMode(meta.mode)
       setPreviewText(meta.preview_text || '')
+      setPreviewFileType((meta.file_type || '').toLowerCase())
+      setPreviewUnits(meta.preview_units || [])
       if (meta.mode === 'inline_file' || meta.mode === 'download_only') {
         const { blob, contentType } = await fetchDocumentBlob(doc.id)
         const url = URL.createObjectURL(blob)
@@ -1522,7 +1550,9 @@ function IntakePage({
     if (previewUrl) URL.revokeObjectURL(previewUrl)
     setPreviewUrl('')
     setPreviewType('')
+    setPreviewFileType('')
     setPreviewText('')
+    setPreviewUnits([])
     setPreviewTitle('')
   }
 
@@ -1616,34 +1646,53 @@ function IntakePage({
                   <td className="col-action">
                     <div className="doc-actions-inline">
                     <button
-                      className="ghost-btn tiny icon-only"
+                      className="preview-action-btn"
                       type="button"
                       title="View document"
-                      disabled={busy || !token}
-                      onClick={() => openPreview(row.doc)}
+                      onClick={() => {
+                        if (!token) {
+                          setErrorMessage('Session expired. Please sign in again.')
+                          return
+                        }
+                        void openPreview(row.doc)
+                      }}
                     >
-                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                        <path d="M12 5c5.5 0 9.9 4.3 11 6.8-1.1 2.5-5.5 6.7-11 6.7S2.1 14.3 1 11.8C2.1 9.3 6.5 5 12 5zm0 2C8.2 7 4.9 9.7 3.5 11.8 4.9 14 8.2 16.5 12 16.5s7.1-2.5 8.5-4.7C19.1 9.7 15.8 7 12 7zm0 2.2a2.8 2.8 0 1 1 0 5.6 2.8 2.8 0 0 1 0-5.6z" />
+                      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" strokeWidth="1.9">
+                        <path d="M1.5 12s3.8-6 10.5-6 10.5 6 10.5 6-3.8 6-10.5 6S1.5 12 1.5 12z" />
+                        <circle cx="12" cy="12" r="3" />
                       </svg>
                     </button>
-                    {!row.intake && (
+                    <button
+                      className="ghost-btn tiny intake-action-btn"
+                      type="button"
+                      onClick={() => {
+                        if (!token) {
+                          setErrorMessage('Session expired. Please sign in again.')
+                          return
+                        }
+                        const seed = seedFromIntake(row.intake || null)
+                        setIntakeSeed(seed)
+                        if (isCEO) {
+                          setMetaModalDoc(row.doc)
+                          return
+                        }
+                        void analyzeDocument(row.doc.id, seed)
+                      }}
+                    >
+                      {row.intake ? 'Re-understand' : 'Understand'}
+                    </button>
+                    {row.intake && (
                       <button
-                        className="ghost-btn tiny intake-action-btn"
+                        className="intake-review-btn"
                         type="button"
-                        disabled={busy || !token}
                         onClick={() => {
-                          if (isCEO) {
-                            setMetaModalDoc(row.doc)
+                          if (!token) {
+                            setErrorMessage('Session expired. Please sign in again.')
                             return
                           }
-                          void analyzeDocument(row.doc.id)
+                          void startReview(row.intake!)
                         }}
                       >
-                        Understand
-                      </button>
-                    )}
-                    {row.intake && (
-                      <button className="intake-review-btn" type="button" onClick={() => startReview(row.intake!)}>
                         Review
                       </button>
                     )}
@@ -1880,45 +1929,63 @@ function IntakePage({
       {previewOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="modal-card doc-preview-modal">
-            <div className="line-item">
-              <h3>{previewTitle}</h3>
+            <div className="doc-preview-head">
+              <div className="doc-preview-title-wrap">
+                <h3>{previewTitle}</h3>
+                {previewFileType && <span className="doc-preview-type">{previewFileType.toUpperCase()}</span>}
+              </div>
               <button className="ghost-btn tiny" type="button" onClick={closePreview}>
                 Close
               </button>
             </div>
-            {previewLoading && <p className="muted">Loading preview...</p>}
-            {!!previewError && <p className="error-text">{previewError}</p>}
-            {!previewLoading && !previewError && previewMode === 'inline_file' && previewType.startsWith('image/') && (
-              <img className="doc-preview-image" src={previewUrl} alt={previewTitle} />
-            )}
-            {!previewLoading && !previewError && previewMode === 'inline_file' && !previewType.startsWith('image/') && (
-              <iframe className="doc-preview-frame" src={previewUrl} title={previewTitle} />
-            )}
-            {!previewLoading &&
-              !previewError &&
-              previewMode === 'extracted_text' && (
-                <div className="stack">
-                  <p className="muted">Content preview (text extracted from uploaded file):</p>
-                  <pre className="doc-preview-text">{previewText || 'No readable text found in document.'}</pre>
-                </div>
+            <div className="doc-preview-body">
+              {previewLoading && <p className="muted">Loading preview...</p>}
+              {!!previewError && <p className="error-text">{previewError}</p>}
+              {!previewLoading && !previewError && previewMode === 'inline_file' && previewType.startsWith('image/') && (
+                <img className="doc-preview-image" src={previewUrl} alt={previewTitle} />
               )}
-            {!previewLoading &&
-              !previewError &&
-              previewMode === 'download_only' && (
-                <div className="doc-preview-fallback">
-                  <p className="muted">Preview is not available for this file type.</p>
-                  <a className="ghost-btn tiny" href={previewUrl} target="_blank" rel="noreferrer">
-                    Open File
-                  </a>
-                </div>
+              {!previewLoading && !previewError && previewMode === 'inline_file' && !previewType.startsWith('image/') && (
+                <iframe className="doc-preview-frame" src={previewUrl} title={previewTitle} />
               )}
+              {!previewLoading &&
+                !previewError &&
+                previewMode === 'extracted_text' && (
+                  <div className="stack">
+                    <p className="muted">
+                      Structured preview for {previewFileType.toUpperCase() || 'document'} (Word/PPT/Excel are shown as parsed content).
+                    </p>
+                    {previewUnits.length > 0 ? (
+                      <div className="doc-preview-units">
+                        {previewUnits.map((unit, idx) => (
+                          <div key={`${unit.ref}-${idx}`} className="doc-preview-unit">
+                            <div className="doc-preview-ref">{unit.ref || `item:${idx + 1}`}</div>
+                            <div className="doc-preview-value">{unit.text}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <pre className="doc-preview-text">{previewText || 'No readable text found in document.'}</pre>
+                    )}
+                  </div>
+                )}
+              {!previewLoading &&
+                !previewError &&
+                previewMode === 'download_only' && (
+                  <div className="doc-preview-fallback">
+                    <p className="muted">Preview is not available for this file type.</p>
+                    <a className="ghost-btn tiny" href={previewUrl} target="_blank" rel="noreferrer">
+                      Open File
+                    </a>
+                  </div>
+                )}
+            </div>
           </div>
         </div>
       )}
 
       {metaModalDoc && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="modal-card">
+          <div className="modal-card metadata-modal">
             <h3>Set Bucket Metadata</h3>
             <p className="muted">{metaModalDoc.file_name}</p>
             <div className="stack">
