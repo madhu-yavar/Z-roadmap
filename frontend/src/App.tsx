@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
@@ -481,7 +481,14 @@ function App() {
 
   async function handleUpload(e: FormEvent) {
     e.preventDefault()
-    if (!token || uploadFiles.length === 0) return
+    if (!token) {
+      setError('Session expired. Please sign in again and retry upload.')
+      return
+    }
+    if (uploadFiles.length === 0) {
+      setError('Please choose at least one document before uploading.')
+      return
+    }
     setBusy(true)
     setError('')
     setUploadMessage('')
@@ -1389,6 +1396,7 @@ function IntakePage({
   fetchDocumentBlob,
 }: IntakeProps) {
   const navigate = useNavigate()
+  const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [metaModalDoc, setMetaModalDoc] = useState<DocumentItem | null>(null)
   const [manualModalOpen, setManualModalOpen] = useState(false)
   const [uploadSidebarOpen, setUploadSidebarOpen] = useState(false)
@@ -1519,8 +1527,9 @@ function IntakePage({
   }
 
   return (
-    <main className="page-wrap">
-      <section className="panel-card">
+    <>
+      <main className="page-wrap">
+        <section className="panel-card">
         <div className="line-item">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <h3>Intake Queue</h3>
@@ -2269,8 +2278,9 @@ function IntakePage({
           </div>
         </div>
       )}
+      </main>
 
-      {/* Upload Sidebar */}
+      {/* Upload Sidebar - moved outside main to fix pointer events */}
       {uploadSidebarOpen && (
         <div className="upload-sidebar-backdrop open" onClick={() => setUploadSidebarOpen(false)} />
       )}
@@ -2289,23 +2299,32 @@ function IntakePage({
           </p>
 
           <form className="upload-inline" onSubmit={handleUpload}>
-            <label className="file-input-wrap">
-              <input
-                key={uploadPickerKey}
-                type="file"
-                multiple
-                onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
-                required
-              />
-              <span>{uploadLabel}</span>
-            </label>
+            <input
+              key={uploadPickerKey}
+              ref={uploadInputRef}
+              type="file"
+              multiple
+              className="upload-file-hidden"
+              onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
+            />
+            <button
+              className="ghost-btn"
+              type="button"
+              onClick={() => uploadInputRef.current?.click()}
+            >
+              {uploadLabel}
+            </button>
             <input
               className="upload-notes"
               placeholder="Notes"
               value={uploadNotes}
               onChange={(e) => setUploadNotes(e.target.value)}
             />
-            <button className="primary-btn" disabled={busy || uploadFiles.length === 0} type="submit">
+            <button
+              className="primary-btn"
+              disabled={uploadFiles.length === 0}
+              type="submit"
+            >
               Upload All
             </button>
             <button className="ghost-btn" type="button" onClick={() => setManualModalOpen(true)}>
@@ -2315,7 +2334,7 @@ function IntakePage({
           {uploadMessage && <div className="success-note">{uploadMessage}</div>}
         </div>
       </div>
-    </main>
+    </>
   )
 }
 
