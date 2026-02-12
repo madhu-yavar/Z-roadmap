@@ -136,6 +136,12 @@ type IntakeAnalysisPayload = {
 type ChatResponse = {
   answer: string
   evidence: string[]
+  actions?: string[]
+  support_applied?: boolean
+  intake_item_id?: number | null
+  support_state?: string
+  intent_clear?: boolean | null
+  next_action?: string
 }
 
 type CurrentUser = {
@@ -279,6 +285,50 @@ function fmtDate(value: string): string {
   }
 }
 
+type ActivityTag = 'FE' | 'BE' | 'AI'
+
+const ACTIVITY_TAGS: ActivityTag[] = ['FE', 'BE', 'AI']
+
+function parseActivityEntry(value: string): { text: string; tags: ActivityTag[] } {
+  const raw = (value || '').trim()
+  const matched = raw.match(/^\[([^\]]+)\]\s*(.*)$/)
+  if (!matched) return { text: raw, tags: [] }
+
+  const parsed = matched[1]
+    .split(/[\/,\s|]+/)
+    .map((x) => x.trim().toUpperCase())
+    .filter((x): x is ActivityTag => ACTIVITY_TAGS.includes(x as ActivityTag))
+  const tags = Array.from(new Set(parsed))
+  return { text: (matched[2] || '').trim(), tags }
+}
+
+function formatActivityEntry(text: string, tags: ActivityTag[]): string {
+  const cleanText = (text || '').trim()
+  const cleanTags = Array.from(new Set(tags.filter((t) => ACTIVITY_TAGS.includes(t))))
+  if (!cleanTags.length) return cleanText
+  if (!cleanText) return `[${cleanTags.join('/')}]`
+  return `[${cleanTags.join('/')}] ${cleanText}`
+}
+
+function inferActivityTag(text: string): ActivityTag {
+  const low = (text || '').toLowerCase()
+  if (/(ui|ux|frontend|front-end|screen|dashboard|form|portal|web|mobile|component|view)/.test(low)) return 'FE'
+  if (/(ai|ml|llm|model|prompt|ocr|classif|extract|summar|nlp|inference|genai|rag)/.test(low)) return 'AI'
+  return 'BE'
+}
+
+function ensureTaggedActivity(value: string): string {
+  const parsed = parseActivityEntry(value)
+  const text = (parsed.text || value || '').trim()
+  if (parsed.tags.length > 0) return formatActivityEntry(text, parsed.tags)
+  return formatActivityEntry(text, [inferActivityTag(text)])
+}
+
+function normalizeActivitiesForEditor(items: string[]): string[] {
+  if (!items.length) return ['[BE]']
+  return items.map((it) => ensureTaggedActivity(it))
+}
+
 function App() {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
   const [email, setEmail] = useState('ceo@local.test')
@@ -341,6 +391,11 @@ function App() {
   })
   const [useCustomModel, setUseCustomModel] = useState(false)
   const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null)
+  const [chatSupportRequest, setChatSupportRequest] = useState<{
+    key: string
+    intakeItemId: number
+    title: string
+  } | null>(null)
 
   const isLoggedIn = Boolean(token)
 
@@ -552,7 +607,7 @@ function App() {
       setSelectedIntakeId(item.id)
       setReviewTitle(item.title)
       setReviewScope(item.scope)
-      setReviewActivities(item.activities.length ? item.activities : [''])
+      setReviewActivities(normalizeActivitiesForEditor(item.activities))
       await loadData(token)
       await loadIntakeHistory(item.id)
       await loadIntakeAnalysis(item.id)
@@ -573,7 +628,7 @@ function App() {
       setSelectedIntakeId(item.id)
       setReviewTitle(item.title)
       setReviewScope(item.scope)
-      setReviewActivities(item.activities.length ? item.activities : [''])
+      setReviewActivities(normalizeActivitiesForEditor(item.activities))
       await loadData(token)
       await loadIntakeHistory(item.id)
       await loadIntakeAnalysis(item.id)
@@ -600,7 +655,7 @@ function App() {
       setSelectedIntakeId(item.id)
       setReviewTitle(item.title)
       setReviewScope(item.scope)
-      setReviewActivities(item.activities.length ? item.activities : [''])
+      setReviewActivities(normalizeActivitiesForEditor(item.activities))
       await loadData(token)
       await loadIntakeHistory(item.id)
     } catch (err) {
@@ -612,9 +667,10 @@ function App() {
 
   async function startReview(item: IntakeItem) {
     setSelectedIntakeId(item.id)
+    setSelectedAnalysis(null)
     setReviewTitle(item.title)
     setReviewScope(item.scope)
-    setReviewActivities(item.activities.length ? item.activities : [''])
+    setReviewActivities(normalizeActivitiesForEditor(item.activities))
     try {
       await loadIntakeHistory(item.id)
       await loadIntakeAnalysis(item.id)
@@ -663,15 +719,59 @@ function App() {
   }
 
   function addReviewActivity() {
-    setReviewActivities((items) => [...items, ''])
+    setReviewActivities((items) => [...items, '[BE]'])
   }
 
   function updateReviewActivity(index: number, value: string) {
-    setReviewActivities((items) => items.map((it, i) => (i === index ? value : it)))
+    setReviewActivities((items) =>
+      items.map((it, i) => {
+        if (i !== index) return it
+        const parsed = parseActivityEntry(it)
+        const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(value)]
+        return formatActivityEntry(value, tags)
+      }),
+    )
+  }
+
+  function toggleReviewActivityTag(index: number, tag: ActivityTag) {
+    setReviewActivities((items) =>
+      items.map((it, i) => {
+        if (i !== index) return it
+        const parsed = parseActivityEntry(it)
+        const has = parsed.tags.includes(tag)
+        let nextTags = has ? parsed.tags.filter((t) => t !== tag) : [...parsed.tags, tag]
+        if (nextTags.length === 0) nextTags = ['BE']
+        return formatActivityEntry(parsed.text, nextTags)
+      }),
+    )
   }
 
   function removeReviewActivity(index: number) {
     setReviewActivities((items) => items.filter((_, i) => i !== index))
+  }
+
+  function requestIntakeSupport(item: IntakeItem) {
+    setChatSupportRequest({
+      key: `${item.id}:${Date.now()}`,
+      intakeItemId: item.id,
+      title: item.title || `Intake ${item.id}`,
+    })
+  }
+
+  async function handleSupportApplied(itemId: number) {
+    if (!token) return
+    try {
+      setChatSupportRequest(null)
+      await loadData(token)
+      const latest = await api<IntakeItem[]>('/intake/items', {}, token)
+      setIntakeItems(latest)
+      const resolved = latest.find((x) => x.id === itemId)
+      if (resolved) {
+        await startReview(resolved)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not refresh intake after support apply')
+    }
   }
 
   async function startRoadmapEdit(item: RoadmapItem) {
@@ -1053,6 +1153,7 @@ function App() {
               setReviewScope={setReviewScope}
               reviewActivities={reviewActivities}
               updateReviewActivity={updateReviewActivity}
+              toggleReviewActivityTag={toggleReviewActivityTag}
               addReviewActivity={addReviewActivity}
               removeReviewActivity={removeReviewActivity}
               submitReview={submitReview}
@@ -1067,6 +1168,7 @@ function App() {
               busy={busy}
               fetchDocumentBlob={fetchDocumentBlob}
               setErrorMessage={setError}
+              requestIntakeSupport={requestIntakeSupport}
             />
           }
         />
@@ -1162,6 +1264,23 @@ function App() {
           )
           return data
         }}
+        supportRequest={chatSupportRequest}
+        onIntakeSupport={async (intakeItemId, question) => {
+          const data = await api<ChatResponse>(
+            '/chat/intake-support',
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ intake_item_id: intakeItemId, question: question || '' }),
+            },
+            token ?? undefined,
+          )
+          return data
+        }}
+        onSupportApplied={handleSupportApplied}
       />
 
       {/* Footer with copyright */}
@@ -1346,6 +1465,7 @@ type IntakeProps = {
   setReviewScope: Dispatch<SetStateAction<string>>
   reviewActivities: string[]
   updateReviewActivity: (index: number, value: string) => void
+  toggleReviewActivityTag: (index: number, tag: ActivityTag) => void
   addReviewActivity: () => void
   removeReviewActivity: (index: number) => void
   submitReview: (status: 'draft' | 'approved') => Promise<void>
@@ -1360,6 +1480,7 @@ type IntakeProps = {
   busy: boolean
   fetchDocumentBlob: (documentId: number) => Promise<{ blob: Blob; contentType: string }>
   setErrorMessage: Dispatch<SetStateAction<string>>
+  requestIntakeSupport: (item: IntakeItem) => void
 }
 
 function IntakePage({
@@ -1383,6 +1504,7 @@ function IntakePage({
   setReviewScope,
   reviewActivities,
   updateReviewActivity,
+  toggleReviewActivityTag,
   addReviewActivity,
   removeReviewActivity,
   submitReview,
@@ -1397,6 +1519,7 @@ function IntakePage({
   busy,
   fetchDocumentBlob,
   setErrorMessage,
+  requestIntakeSupport,
 }: IntakeProps) {
   const navigate = useNavigate()
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
@@ -1413,6 +1536,7 @@ function IntakePage({
   const [previewUnits, setPreviewUnits] = useState<Array<{ ref: string; text: string }>>([])
   const [previewError, setPreviewError] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
+  const supportTriggerRef = useRef('')
   const [intakeSeed, setIntakeSeed] = useState<IntakeSeedMeta>({
     priority: 'medium',
     project_context: 'client',
@@ -1444,7 +1568,11 @@ function IntakePage({
   })
 
   const allDocumentsSelected = documents.length > 0 && documents.every((doc) => selectedDocumentIds.includes(doc.id))
-  const understandingCheck = selectedAnalysis?.output_json?.document_understanding_check as
+  const selectedAnalysisForItem =
+    selectedIntakeItem && selectedAnalysis && selectedAnalysis.intake_item_id === selectedIntakeItem.id
+      ? selectedAnalysis
+      : null
+  const understandingCheck = selectedAnalysisForItem?.output_json?.document_understanding_check as
     | {
         'Primary intent (1 sentence)'?: string
         'Explicit outcomes (bullet list)'?: string[]
@@ -1452,13 +1580,18 @@ function IntakePage({
         Confidence?: string
       }
     | undefined
-  const llmRuntime = selectedAnalysis?.output_json?.llm_runtime as
+  const llmRuntime = selectedAnalysisForItem?.output_json?.llm_runtime as
     | { provider?: string; model?: string; attempted?: boolean; success?: boolean; error?: string }
     | undefined
-  const parserCoverage = selectedAnalysis?.output_json?.parser_coverage as
+  const parserCoverage = selectedAnalysisForItem?.output_json?.parser_coverage as
     | { units_processed?: number; pages_detected?: number[] }
     | undefined
+  const supportResolution = selectedAnalysisForItem?.output_json?.support_resolution as
+    | { applied?: boolean; applied_at?: string; next_step?: string; intent_clear?: boolean }
+    | undefined
+  const analysisRun = selectedAnalysisForItem?.output_json?.analysis_run as { run_id?: string } | undefined
   const isUnderstandingPending = selectedIntakeItem?.status === 'understanding_pending'
+  const isIntentUnclear = understandingCheck?.['Primary intent (1 sentence)'] === 'Document intent is unclear.'
   const docById = useMemo(() => new Map(documents.map((d) => [d.id, d])), [documents])
   const bucketDocIds = useMemo(
     () => new Set(roadmapItems.map((r) => r.source_document_id).filter((id): id is number => id !== null)),
@@ -1481,6 +1614,17 @@ function IntakePage({
       }),
     [documents, intakeByDocument, bucketDocIds],
   )
+
+  useEffect(() => {
+    if (!selectedIntakeItem || !selectedAnalysisForItem || !isUnderstandingPending || !isIntentUnclear) {
+      supportTriggerRef.current = ''
+      return
+    }
+    const dedupeKey = `${selectedIntakeItem.id}:${analysisRun?.run_id || 'no-run'}`
+    if (supportTriggerRef.current === dedupeKey) return
+    supportTriggerRef.current = dedupeKey
+    requestIntakeSupport(selectedIntakeItem)
+  }, [selectedIntakeItem, selectedAnalysisForItem, isUnderstandingPending, isIntentUnclear, analysisRun?.run_id, requestIntakeSupport])
   const prettyStage = (value: string) => value.replaceAll('_', ' ')
   const formatBucketType = (projectContext: string, initiativeType: string) =>
     `${projectContext === 'internal' ? 'Internal' : 'Client'} / ${initiativeType === 'new_product' ? 'New Product' : 'New Feature'}`
@@ -1748,7 +1892,7 @@ function IntakePage({
                     <p className="error-text">Provider failure reason: {llmRuntime.error}</p>
                   )}
                 </div>
-                {understandingCheck['Primary intent (1 sentence)'] === 'Document intent is unclear.' && (
+                {isIntentUnclear && (
                   <div className="error-text">
                     <p>Approval is blocked because intent is unclear.</p>
                     <ol>
@@ -1757,6 +1901,13 @@ function IntakePage({
                       <li>Re-run understanding after fixing provider or uploading a clearer BRD/RFP.</li>
                     </ol>
                     <div className="row-actions">
+                      <button
+                        className="primary-btn tiny"
+                        type="button"
+                        onClick={() => selectedIntakeItem && requestIntakeSupport(selectedIntakeItem)}
+                      >
+                        Open Support Assistant
+                      </button>
                       <button
                         className="ghost-btn tiny"
                         type="button"
@@ -1795,10 +1946,15 @@ function IntakePage({
                     </div>
                   </div>
                 )}
+                {!isIntentUnclear && supportResolution?.applied && (
+                  <p className="success-text">
+                    Intake Support resolved understanding. Next step: approve understanding and generate candidate.
+                  </p>
+                )}
                 <button
                   className="primary-btn"
                   type="button"
-                  disabled={busy || understandingCheck['Primary intent (1 sentence)'] === 'Document intent is unclear.'}
+                  disabled={busy || isIntentUnclear}
                   onClick={() => approveUnderstanding(selectedIntakeItem.id)}
                 >
                   Approve Understanding and Generate Candidate
@@ -1840,18 +1996,38 @@ function IntakePage({
                 <thead>
                   <tr>
                     <th>#</th>
+                    <th>Tags</th>
                     <th>Activity</th>
                     <th>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {reviewActivities.map((activity, idx) => (
+                  {reviewActivities.map((activity, idx) => {
+                    const parsed = parseActivityEntry(activity)
+                    return (
                     <tr key={`${idx}-${activity}`}>
                       <td>{idx + 1}</td>
                       <td>
+                        <div className="activity-chip-row">
+                          {ACTIVITY_TAGS.map((tag) => {
+                            const active = parsed.tags.includes(tag)
+                            return (
+                              <button
+                                key={`${idx}-${tag}`}
+                                className={`activity-tag-chip tag-${tag.toLowerCase()}${active ? ' active' : ' inactive'}`}
+                                type="button"
+                                onClick={() => toggleReviewActivityTag(idx, tag)}
+                              >
+                                {tag}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </td>
+                      <td>
                         <input
                           className="activity-input"
-                          value={activity}
+                          value={parsed.text}
                           onChange={(e) => updateReviewActivity(idx, e.target.value)}
                           placeholder="Enter activity"
                         />
@@ -1862,7 +2038,7 @@ function IntakePage({
                         </button>
                       </td>
                     </tr>
-                  ))}
+                  )})}
                 </tbody>
               </table>
             </div>
@@ -2695,7 +2871,28 @@ function RoadmapPage({
             <details className="flat-detail">
               <summary>View activities ({roadmapActivities.length})</summary>
               <ul className="understanding-list">
-                {roadmapActivities.length > 0 ? roadmapActivities.map((a, i) => <li key={`${i}-${a}`}>{a}</li>) : <li>-</li>}
+                {roadmapActivities.length > 0 ? (
+                  roadmapActivities.map((a, i) => {
+                    const parsed = parseActivityEntry(a)
+                    const visibleTags = parsed.tags.length ? parsed.tags : [inferActivityTag(parsed.text || a)]
+                    return (
+                      <li key={`${i}-${a}`}>
+                        <div className="activity-read-row">
+                          <div className="activity-chip-row">
+                            {visibleTags.map((tag) => (
+                              <span key={`${i}-${tag}`} className={`activity-tag-chip tag-${tag.toLowerCase()} active`}>
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                          <span>{parsed.text || a}</span>
+                        </div>
+                      </li>
+                    )
+                  })
+                ) : (
+                  <li>-</li>
+                )}
               </ul>
             </details>
             <p className="source-line">Source document: {selectedRoadmapItem.source_document_id ? docMap.get(selectedRoadmapItem.source_document_id) || '-' : '-'}</p>

@@ -878,6 +878,7 @@ def generate_intake_analysis_v2(
     model: str = "",
     api_key: str = "",
     base_url: str = "",
+    guidance: str = "",
 ) -> tuple[dict, dict]:
     units = extract_document_units(file_path=file_path, file_type=file_type)
     fallback = _fallback_understanding(units=units, file_name=file_name, file_type=file_type)
@@ -889,6 +890,7 @@ def generate_intake_analysis_v2(
         understanding = fallback
     else:
         units_for_prompt = "\n".join([f"[{u['ref']}] {u['text']}" for u in units[:260]])
+        guidance_block = f"\nOperator guidance:\n{guidance}\nUse this to focus extraction while staying evidence-grounded.\n" if guidance else ""
         prompt = f"""
 You are a Roadmap Intake Agent.
 
@@ -918,6 +920,7 @@ Rules:
 - Confidence must be High / Medium / Low.
 - Prioritize objective/scope/requirements/activities sections.
 - Deprioritize tagline/marketing text.
+{guidance_block}
 
 Document name: {file_name}
 Document units with references:
@@ -991,6 +994,7 @@ def generate_roadmap_candidate_from_document(
     model: str = "",
     api_key: str = "",
     base_url: str = "",
+    guidance: str = "",
 ) -> tuple[dict, dict]:
     units = extract_document_units(file_path=file_path, file_type=file_type)
     fallback = _fallback_candidate(units=units, file_name=file_name, file_type=file_type)
@@ -1006,6 +1010,7 @@ def generate_roadmap_candidate_from_document(
         candidate = fallback
     else:
         units_for_prompt = "\n".join([f"[{u['ref']}] {u['text']}" for u in units[:260]])
+        guidance_block = f"\nOperator guidance:\n{guidance}\nUse this to prioritize relevant document sections.\n" if guidance else ""
         prompt = f"""
 SYSTEM / GOVERNANCE INSTRUCTION
 You are a Roadmap Intake Agent.
@@ -1044,6 +1049,7 @@ Field rules:
 - Tags must be one or more from: FE, BE, AI
 - Evidence: document references only (no quotes)
 - Confidence: High / Medium / Low
+{guidance_block}
 
 Approved understanding context:
 {understanding_check}

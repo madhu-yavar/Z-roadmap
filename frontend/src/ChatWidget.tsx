@@ -3,34 +3,39 @@ import { useEffect, useState, type FormEvent } from 'react'
 type ChatResponse = {
   answer: string
   evidence: string[]
+  actions?: string[]
+  support_applied?: boolean
+  intake_item_id?: number | null
+  support_state?: string
+  intent_clear?: boolean | null
+  next_action?: string
 }
 
 type ChatMessage = {
   role: 'user' | 'bot'
   content: string
   evidence?: string[]
+  actions?: string[]
+  supportState?: string
+  nextAction?: string
+  intakeItemId?: number | null
 }
 
 type ChatWidgetProps = {
   token: string | null
   busy: boolean
   onChat: (question: string) => Promise<ChatResponse>
+  supportRequest?: { key: string; intakeItemId: number; title: string } | null
+  onIntakeSupport?: (intakeItemId: number, question?: string) => Promise<ChatResponse>
+  onSupportApplied?: (intakeItemId: number) => Promise<void> | void
 }
 
-export function ChatWidget({ token, busy, onChat }: ChatWidgetProps) {
+export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSupport, onSupportApplied }: ChatWidgetProps) {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [isTyping, setIsTyping] = useState(false)
-
-  // Auto-open on first visit
-  useEffect(() => {
-    const hasVisited = localStorage.getItem('chat-widget-visited')
-    if (!hasVisited) {
-      setIsChatOpen(true)
-      localStorage.setItem('chat-widget-visited', 'true')
-    }
-  }, [])
+  const [supportContext, setSupportContext] = useState<{ intakeItemId: number; title: string } | null>(null)
 
   // Add bot response to history when received
   useEffect(() => {
@@ -41,6 +46,87 @@ export function ChatWidget({ token, busy, onChat }: ChatWidgetProps) {
       }
     }
   }, [chatHistory, isTyping])
+
+  useEffect(() => {
+    if (!supportRequest || !onIntakeSupport || !token) return
+
+    let alive = true
+    setIsChatOpen(true)
+    setSupportContext({ intakeItemId: supportRequest.intakeItemId, title: supportRequest.title })
+    setIsTyping(true)
+    setChatHistory((prev) => [
+      ...prev,
+      {
+        role: 'bot',
+        content: `Intake support triggered for "${supportRequest.title}". Checking root cause and recommended recovery path...`,
+      },
+      { role: 'bot', content: '' },
+    ])
+
+    void onIntakeSupport(supportRequest.intakeItemId)
+      .then((response) => {
+        if (!alive) return
+        setChatHistory((prev) => {
+          const next = [...prev]
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            if (next[i].role === 'bot' && next[i].content === '') {
+              next[i] = {
+                role: 'bot',
+                content: response.answer,
+                evidence: response.evidence,
+                actions: response.actions || [],
+                supportState: response.support_state || 'general',
+                nextAction: response.next_action || 'none',
+                intakeItemId: response.intake_item_id ?? null,
+              }
+              return next
+            }
+          }
+          next.push({
+            role: 'bot',
+            content: response.answer,
+            evidence: response.evidence,
+            actions: response.actions || [],
+            supportState: response.support_state || 'general',
+            nextAction: response.next_action || 'none',
+            intakeItemId: response.intake_item_id ?? null,
+          })
+          return next
+        })
+        if (
+          response.intake_item_id &&
+          onSupportApplied &&
+          (response.support_applied || (response.intent_clear && response.next_action === 'approve_understanding'))
+        ) {
+          void onSupportApplied(response.intake_item_id)
+          setSupportContext(null)
+          setIsChatOpen(false)
+        }
+      })
+      .catch(() => {
+        if (!alive) return
+        setChatHistory((prev) => {
+          const next = [...prev]
+          for (let i = next.length - 1; i >= 0; i -= 1) {
+            if (next[i].role === 'bot' && next[i].content === '') {
+              next[i] = {
+                role: 'bot',
+                content: 'Support assistant could not load diagnostics right now. Please retry from the Intake panel.',
+              }
+              return next
+            }
+          }
+          return [...next, { role: 'bot', content: 'Support assistant could not load diagnostics right now.' }]
+        })
+      })
+      .finally(() => {
+        if (alive) setIsTyping(false)
+      })
+
+    return () => {
+      alive = false
+    }
+  }, [supportRequest?.key, supportRequest, onIntakeSupport, onSupportApplied, token])
 
   async function handleChatSubmit(e: FormEvent) {
     e.preventDefault()
@@ -60,7 +146,10 @@ export function ChatWidget({ token, busy, onChat }: ChatWidgetProps) {
 
     try {
       // Call the chat API
-      const response = await onChat(currentQuestion)
+      const response =
+        supportContext && onIntakeSupport
+          ? await onIntakeSupport(supportContext.intakeItemId, currentQuestion)
+          : await onChat(currentQuestion)
 
       // Replace typing indicator with actual response
       setChatHistory(prev => {
@@ -69,10 +158,23 @@ export function ChatWidget({ token, busy, onChat }: ChatWidgetProps) {
         newHistory[lastIndex] = {
           role: 'bot',
           content: response.answer,
-          evidence: response.evidence
+          evidence: response.evidence,
+          actions: response.actions || [],
+          supportState: response.support_state || 'general',
+          nextAction: response.next_action || 'none',
+          intakeItemId: response.intake_item_id ?? null,
         }
         return newHistory
       })
+      if (
+        response.intake_item_id &&
+        onSupportApplied &&
+        (response.support_applied || (response.intent_clear && response.next_action === 'approve_understanding'))
+      ) {
+        void onSupportApplied(response.intake_item_id)
+        setSupportContext(null)
+        setIsChatOpen(false)
+      }
     } catch (err) {
       // Show error message
       setChatHistory(prev => {
@@ -105,10 +207,14 @@ export function ChatWidget({ token, busy, onChat }: ChatWidgetProps) {
               <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 6C13.66 6 15 7.34 15 9C15 10.66 13.66 12 12 12C10.34 12 9 10.66 9 9C9 7.34 10.34 6 12 6ZM12 18.2C9.5 18.2 7.29 16.92 6 15.01C6.03 12.99 10 11.9 12 11.9C13.99 11.9 17.97 12.99 18 15.01C16.71 16.92 14.5 18.2 12 18.2Z"/>
             </svg>
             Roadmap Assistant
+            {supportContext && <span className="chat-context-pill">Intake Support</span>}
           </h3>
           <button
             className="chat-close-btn"
-            onClick={() => setIsChatOpen(false)}
+            onClick={() => {
+              setIsChatOpen(false)
+              setSupportContext(null)
+            }}
             aria-label="Close chat"
           >
             <svg viewBox="0 0 24 24" width="20" height="20">
@@ -150,6 +256,28 @@ export function ChatWidget({ token, busy, onChat }: ChatWidgetProps) {
                 ) : (
                   <>
                     <p style={{ margin: 0 }}>{msg.content}</p>
+                    {msg.actions && msg.actions.length > 0 && (
+                      <ul className="chat-message-actions">
+                        {msg.actions.map((action, idx) => (
+                          <li key={`${action}-${idx}`}>{action}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {msg.nextAction === 'approve_understanding' && msg.intakeItemId && onSupportApplied && (
+                      <div className="chat-message-cta-row">
+                        <button
+                          type="button"
+                          className="chat-inline-cta"
+                          onClick={() => {
+                            void onSupportApplied(msg.intakeItemId as number)
+                            setSupportContext(null)
+                            setIsChatOpen(false)
+                          }}
+                        >
+                          Go to Understanding Review
+                        </button>
+                      </div>
+                    )}
                     {msg.evidence && msg.evidence.length > 0 && (
                       <div className="chat-message-evidence">
                         <strong>Evidence:</strong> {msg.evidence.join(', ')}
