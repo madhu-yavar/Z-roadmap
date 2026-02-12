@@ -36,6 +36,17 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
   const [isTyping, setIsTyping] = useState(false)
   const [supportContext, setSupportContext] = useState<{ intakeItemId: number; title: string } | null>(null)
+  const [supportNavState, setSupportNavState] = useState<{
+    intakeItemId: number | null
+    supportState: string
+    nextAction: string
+    canProceed: boolean
+  }>({
+    intakeItemId: null,
+    supportState: 'general',
+    nextAction: 'none',
+    canProceed: false,
+  })
 
   // Add bot response to history when received
   useEffect(() => {
@@ -53,6 +64,12 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
     let alive = true
     setIsChatOpen(true)
     setSupportContext({ intakeItemId: supportRequest.intakeItemId, title: supportRequest.title })
+    setSupportNavState({
+      intakeItemId: supportRequest.intakeItemId,
+      supportState: 'blocked_unclear_intent',
+      nextAction: 'resolve_intent',
+      canProceed: false,
+    })
     setIsTyping(true)
     setChatHistory((prev) => [
       ...prev,
@@ -93,17 +110,20 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
           })
           return next
         })
-        if (
+        const canProceed = Boolean(
           response.intake_item_id &&
-          onSupportApplied &&
-          (response.support_applied || (response.intent_clear && response.next_action === 'approve_understanding'))
-        ) {
-          void onSupportApplied(response.intake_item_id)
-          setSupportContext(null)
-          setIsChatOpen(false)
-        }
+          response.intent_clear &&
+          response.next_action === 'approve_understanding',
+        )
+        setSupportNavState({
+          intakeItemId: response.intake_item_id ?? supportRequest.intakeItemId,
+          supportState: response.support_state || 'general',
+          nextAction: response.next_action || 'none',
+          canProceed,
+        })
       })
-      .catch(() => {
+      .catch((err) => {
+        const reason = err instanceof Error ? err.message : 'Unknown error'
         if (!alive) return
         setChatHistory((prev) => {
           const next = [...prev]
@@ -111,12 +131,12 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
             if (next[i].role === 'bot' && next[i].content === '') {
               next[i] = {
                 role: 'bot',
-                content: 'Support assistant could not load diagnostics right now. Please retry from the Intake panel.',
+                content: `Support assistant diagnostics failed: ${reason}`,
               }
               return next
             }
           }
-          return [...next, { role: 'bot', content: 'Support assistant could not load diagnostics right now.' }]
+          return [...next, { role: 'bot', content: `Support assistant diagnostics failed: ${reason}` }]
         })
       })
       .finally(() => {
@@ -166,23 +186,28 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
         }
         return newHistory
       })
-      if (
-        response.intake_item_id &&
-        onSupportApplied &&
-        (response.support_applied || (response.intent_clear && response.next_action === 'approve_understanding'))
-      ) {
-        void onSupportApplied(response.intake_item_id)
-        setSupportContext(null)
-        setIsChatOpen(false)
+      if (supportContext) {
+        const canProceed = Boolean(
+          response.intake_item_id &&
+          response.intent_clear &&
+          response.next_action === 'approve_understanding',
+        )
+        setSupportNavState({
+          intakeItemId: response.intake_item_id ?? supportContext.intakeItemId,
+          supportState: response.support_state || 'general',
+          nextAction: response.next_action || 'none',
+          canProceed,
+        })
       }
     } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Unknown error'
       // Show error message
       setChatHistory(prev => {
         const newHistory = [...prev]
         const lastIndex = newHistory.length - 1
         newHistory[lastIndex] = {
           role: 'bot',
-          content: 'Sorry, I encountered an error. Please try again.'
+          content: `Support assistant request failed: ${reason}`
         }
         return newHistory
       })
@@ -263,21 +288,6 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
                         ))}
                       </ul>
                     )}
-                    {msg.nextAction === 'approve_understanding' && msg.intakeItemId && onSupportApplied && (
-                      <div className="chat-message-cta-row">
-                        <button
-                          type="button"
-                          className="chat-inline-cta"
-                          onClick={() => {
-                            void onSupportApplied(msg.intakeItemId as number)
-                            setSupportContext(null)
-                            setIsChatOpen(false)
-                          }}
-                        >
-                          Go to Understanding Review
-                        </button>
-                      </div>
-                    )}
                     {msg.evidence && msg.evidence.length > 0 && (
                       <div className="chat-message-evidence">
                         <strong>Evidence:</strong> {msg.evidence.join(', ')}
@@ -289,6 +299,41 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
             ))
           )}
         </div>
+
+        {supportContext && onSupportApplied && (
+          <div className="chat-support-transition">
+            <button
+              type="button"
+              className="chat-support-transition-btn"
+              disabled={
+                busy ||
+                isTyping ||
+                !supportNavState.canProceed ||
+                !supportNavState.intakeItemId ||
+                supportNavState.nextAction !== 'approve_understanding'
+              }
+              onClick={() => {
+                if (!supportNavState.intakeItemId) return
+                void onSupportApplied(supportNavState.intakeItemId)
+                setSupportContext(null)
+                setIsChatOpen(false)
+                setSupportNavState({
+                  intakeItemId: null,
+                  supportState: 'general',
+                  nextAction: 'none',
+                  canProceed: false,
+                })
+              }}
+            >
+              Go to Understanding Review
+            </button>
+            <p className="chat-support-transition-hint">
+              {supportNavState.canProceed
+                ? 'Intent is clear. You can now approve understanding.'
+                : 'Waiting for clear intent. Continue support conversation or re-run understanding.'}
+            </p>
+          </div>
+        )}
 
         <form className="chat-widget-input" onSubmit={handleChatSubmit}>
           <input

@@ -65,8 +65,16 @@ def _is_resolve_request(question: str) -> bool:
         "approve understanding",
         "generate candidate",
         "move ahead",
+        "move to approve",
+        "move to approval",
+        "this is the intent",
+        "intent is clear",
     ]
     if any(t in q for t in triggers):
+        return True
+    if ("approve" in q or "approval" in q) and ("understand" in q or "underst" in q or "intent" in q):
+        return True
+    if "move" in q and ("approve" in q or "approval" in q):
         return True
     if ("understand" in q and "activit" in q) or ("generate" in q and "activit" in q):
         return True
@@ -575,6 +583,25 @@ def run_intake_support_agent(
                 intent_clear,
                 next_action,
             )
+        # Resolve was requested but guided reprocessing still did not clear intent.
+        # Return deterministic blocker feedback instead of a conversational "looks clear" answer.
+        support_state, intent_clear, next_action = _support_state(item, understanding, support_applied=False)
+        return (
+            f"{message} Please add objective/outcomes in upload metadata and re-run understanding.",
+            _context_evidence_ids(context),
+            _normalize_actions(
+                [
+                    "Add one-line objective and expected outcomes in upload notes.",
+                    "Click Re-run Understanding for this same intake item.",
+                    "If still blocked, switch provider/model in Settings and test provider.",
+                ]
+            ),
+            False,
+            item.id,
+            support_state,
+            intent_clear,
+            next_action,
+        )
 
     causes, actions = _derive_rca(context)
     llm_result = _try_llm_rewrite(

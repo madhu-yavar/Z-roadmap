@@ -38,6 +38,8 @@ def intake_support(payload: IntakeSupportInput, db: Session = Depends(get_db), c
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Intake support failed: {exc}") from exc
     return ChatOut(
         answer=answer,
         evidence=evidence,
