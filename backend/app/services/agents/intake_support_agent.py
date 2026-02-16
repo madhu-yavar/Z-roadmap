@@ -69,16 +69,26 @@ def _is_resolve_request(question: str) -> bool:
         "move to approval",
         "this is the intent",
         "intent is clear",
+        "are you clear with the intent",
+        "are u clear with the intent",
+        "go to understand review",
+        "go to understanding review",
+        "move to understanding review",
+        "move to understand review",
+        "understand review",
+        "understanding review",
     ]
     if any(t in q for t in triggers):
         return True
+    if "clear" in q and "intent" in q:
+        return True
     if ("approve" in q or "approval" in q) and ("understand" in q or "underst" in q or "intent" in q):
         return True
-    if "move" in q and ("approve" in q or "approval" in q):
+    if ("move" in q or "go to" in q) and ("approve" in q or "approval" in q or "review" in q or "understand" in q):
         return True
     if ("understand" in q and "activit" in q) or ("generate" in q and "activit" in q):
         return True
-    return ("doubt" in q and ("now" in q or "clear" in q))
+    return ("doubt" in q and ("now" in q or "clear" in q)) or ("no doubts" in q)
 
 
 def _intent_is_clear(understanding: dict | None) -> bool:
@@ -96,6 +106,20 @@ def _support_state(item: IntakeItem, understanding: dict | None, support_applied
             return ("candidate_ready", True, "review_candidate")
         return ("clear", True, "none")
     return ("blocked_unclear_intent", False, "resolve_intent")
+
+
+def _looks_like_clear_claim(answer: str) -> bool:
+    low = (answer or "").lower()
+    patterns = [
+        "intent is now clear",
+        "intent is clear",
+        "no doubts",
+        "we can proceed",
+        "sufficient detail to proceed",
+        "ready to proceed",
+        "can now understand",
+    ]
+    return any(p in low for p in patterns)
 
 
 def _snapshot_intake(item: IntakeItem) -> dict:
@@ -418,6 +442,9 @@ def _try_llm_rewrite(
             prompt = f"""
 You are an Intake Support Agent for enterprise roadmap intake.
 Stay in the same intake context. Do not answer with generic pipeline summaries.
+State discipline is mandatory:
+- If context.primary_intent is "Document intent is unclear.", do NOT claim intent is clear.
+- Do NOT suggest state transitions to review/approval unless current state supports it.
 
 Context JSON:
 {json.dumps(context, ensure_ascii=True)}
@@ -615,6 +642,18 @@ def run_intake_support_agent(
     if llm_result:
         answer, evidence, llm_actions = llm_result
         support_state, intent_clear, next_action = _support_state(item, understanding, support_applied=False)
+        if not intent_clear and _looks_like_clear_claim(answer):
+            answer = (
+                "Intent is still unclear in system state. I cannot move to Understanding Review approval yet. "
+                "Please re-run understanding with objective/outcomes metadata or provide clearer BRD/RFP sections."
+            )
+            llm_actions = _normalize_actions(
+                [
+                    "Add one-line objective and expected outcomes in upload notes.",
+                    "Click Re-run Understanding for this intake item.",
+                    "Then ask support to move to Understanding Review.",
+                ]
+            )
         return answer, evidence, llm_actions, False, item.id, support_state, intent_clear, next_action
 
     if q:

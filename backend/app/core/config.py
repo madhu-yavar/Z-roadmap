@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+psycopg2://roadmap:roadmap@localhost:5432/roadmap_agent"
     FILE_STORAGE_PATH: str = "storage/uploads"
     CORS_ORIGINS: str = (
-        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:8000"
+        "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://[::1]:5173,http://localhost:8000"
     )
     GOOGLE_GENAI_USE_VERTEXAI: bool = False
     GOOGLE_CLOUD_PROJECT: str = ""

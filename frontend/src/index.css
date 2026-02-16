@@ -2775,6 +2775,38 @@ button.activity-tag-chip:hover {
   color: var(--ink);
 }
 
+.chat-support-transition {
+  border-top: 1px solid var(--line);
+  background: #fff;
+  padding: 10px 16px 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.chat-support-transition-btn {
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.chat-support-transition-btn:disabled {
+  border-color: var(--line);
+  background: #f3f4f7;
+  color: #96a0b5;
+  cursor: not-allowed;
+}
+
+.chat-support-transition-hint {
+  margin: 0;
+  font-size: 0.76rem;
+  color: var(--ink-light);
+}
+
 .chat-message-cta-row {
   margin-top: 8px;
   display: flex;
