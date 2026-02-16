@@ -3097,6 +3097,34 @@ button.activity-tag-chip:hover {
   letter-spacing: 0.05em;
 }
 
+.analytics-capacity-summary {
+  margin-top: var(--spacing-lg);
+  padding-top: var(--spacing-lg);
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 12px;
+}
+
+.analytics-capacity-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.analytics-capacity-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.analytics-capacity-card p {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
 .detailed-roadmap-content {
   padding: var(--spacing-xl);
 }
@@ -3583,6 +3611,10 @@ button.activity-tag-chip:hover {
   .task-card-timeline {
     display: none;
   }
+
+  .analytics-capacity-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 /* ========== Settings Page Styles ========== */
@@ -3694,8 +3726,106 @@ button.activity-tag-chip:hover {
   gap: 16px;
 }
 
+.split-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.split-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.capacity-meter-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.capacity-meter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.capacity-meter-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.capacity-meter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.capacity-meter-state.ok {
+  color: #6b7280;
+}
+
+.capacity-meter-state.warn {
+  color: #92400e;
+}
+
+.capacity-meter-state.error {
+  color: #9d2b2b;
+}
+
+.capacity-meter-track {
+  width: 100%;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--line-light);
+  overflow: hidden;
+}
+
+.capacity-meter-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.2s ease;
+}
+
+.capacity-meter-fill.ok {
+  background: #10b981;
+}
+
+.capacity-meter-fill.warn {
+  background: #f59e0b;
+}
+
+.capacity-meter-fill.error {
+  background: #ef4444;
+}
+
+.capacity-meter-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.82rem;
+}
+
 @media (max-width: 640px) {
   .split-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .split-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .split-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .capacity-meter-grid {
     grid-template-columns: 1fr;
   }
 

@@ -1,4 +1,5 @@
-from datetime import datetime
+import math
+from datetime import datetime, timedelta
 from io import BytesIO
 import re
 from difflib import SequenceMatcher
@@ -11,6 +12,7 @@ from openpyxl import Workbook
 from app.api.deps import get_current_user, require_roles
 from app.db.session import get_db
 from app.models.enums import UserRole
+from app.models.governance_config import GovernanceConfig
 from app.models.intake_item import IntakeItem
 from app.models.roadmap_plan_item import RoadmapPlanItem
 from app.models.roadmap_item import RoadmapItem
@@ -20,6 +22,8 @@ from app.models.user import User
 from app.schemas.common import BulkDeleteOut, BulkIdsIn
 from app.schemas.history import VersionOut
 from app.schemas.roadmap import (
+    CapacityValidateIn,
+    CapacityValidateOut,
     RoadmapItemOut,
     RoadmapItemUpdateIn,
     RoadmapMoveIn,
@@ -38,6 +42,8 @@ router = APIRouter(prefix="/roadmap", tags=["roadmap"])
 
 SIMILARITY_FLAG_THRESHOLD = 0.62
 SIMILARITY_MATCH_THRESHOLD = 0.55
+ROLE_KEYS = ("fe", "be", "ai", "pm")
+PORTFOLIOS = ("client", "internal")
 
 STOPWORDS = {
     "the",
@@ -81,9 +87,221 @@ def _snapshot(item: RoadmapItem) -> dict:
         "rnd_decision_date": item.rnd_decision_date,
         "rnd_next_gate": item.rnd_next_gate,
         "rnd_risk_level": item.rnd_risk_level,
+        "fe_fte": item.fe_fte,
+        "be_fte": item.be_fte,
+        "ai_fte": item.ai_fte,
+        "pm_fte": item.pm_fte,
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
     }
+
+
+def _norm_portfolio(value: str) -> str:
+    low = (value or "").strip().lower()
+    return low if low in PORTFOLIOS else "internal"
+
+
+def _safe_non_negative(value: float | None) -> float:
+    return max(0.0, float(value or 0.0))
+
+
+def _usage_duration(value: int | None) -> int:
+    return value if value and value > 0 else 1
+
+
+def _duration_weeks_from_dates(start_date: str, end_date: str) -> int:
+    start = datetime.fromisoformat(start_date)
+    end = datetime.fromisoformat(end_date)
+    if end < start:
+        raise ValueError("Planned end date must be on or after planned start date.")
+    days = (end - start).days + 1
+    return max(1, math.ceil(days / 7))
+
+
+def _capacity_limit_pw(cfg: GovernanceConfig, portfolio: str, role: str) -> float:
+    team = float(getattr(cfg, f"team_{role}") or 0)
+    efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+    quota = float(cfg.quota_client if portfolio == "client" else cfg.quota_internal)
+    return max(0.0, team * efficiency * 52.0 * quota)
+
+
+def _capacity_limit_weekly(cfg: GovernanceConfig, portfolio: str, role: str) -> float:
+    team = float(getattr(cfg, f"team_{role}") or 0)
+    efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+    quota = float(cfg.quota_client if portfolio == "client" else cfg.quota_internal)
+    return max(0.0, team * efficiency * quota)
+
+
+def _week_key(dt: datetime) -> str:
+    iso = dt.isocalendar()
+    return f"{iso.year}-W{iso.week:02d}"
+
+
+def _week_keys_between(start: datetime, end: datetime) -> list[str]:
+    cursor = start - timedelta(days=start.weekday())
+    last = end - timedelta(days=end.weekday())
+    keys: list[str] = []
+    while cursor <= last:
+        keys.append(_week_key(cursor))
+        cursor += timedelta(days=7)
+    return keys
+
+
+def _parse_plan_dates(start_date: str, end_date: str) -> tuple[datetime, datetime] | None:
+    if not start_date or not end_date:
+        return None
+    try:
+        start = datetime.fromisoformat(start_date)
+        end = datetime.fromisoformat(end_date)
+    except Exception:
+        return None
+    if end < start:
+        return None
+    return start, end
+
+
+def _current_usage_weekly(
+    db: Session,
+    exclude_bucket_item_id: int | None = None,
+) -> dict[str, dict[str, dict[str, float]]]:
+    usage: dict[str, dict[str, dict[str, float]]] = {
+        "client": {},
+        "internal": {},
+    }
+    plans = db.query(RoadmapPlanItem).all()
+    for plan in plans:
+        if exclude_bucket_item_id and plan.bucket_item_id == exclude_bucket_item_id:
+            continue
+        parsed = _parse_plan_dates(plan.planned_start_date, plan.planned_end_date)
+        if not parsed:
+            continue
+        start, end = parsed
+        portfolio = _norm_portfolio(plan.project_context)
+        for wk in _week_keys_between(start, end):
+            slot = usage[portfolio].setdefault(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0})
+            slot["fe"] += _safe_non_negative(plan.fe_fte)
+            slot["be"] += _safe_non_negative(plan.be_fte)
+            slot["ai"] += _safe_non_negative(plan.ai_fte)
+            slot["pm"] += _safe_non_negative(plan.pm_fte)
+    return usage
+
+
+def _current_usage_pw(db: Session) -> dict[str, dict[str, float]]:
+    usage: dict[str, dict[str, float]] = {
+        "client": {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0},
+        "internal": {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0},
+    }
+    plans = db.query(RoadmapPlanItem).all()
+    for plan in plans:
+        portfolio = _norm_portfolio(plan.project_context)
+        duration = _usage_duration(plan.tentative_duration_weeks)
+        usage[portfolio]["fe"] += _safe_non_negative(plan.fe_fte) * duration
+        usage[portfolio]["be"] += _safe_non_negative(plan.be_fte) * duration
+        usage[portfolio]["ai"] += _safe_non_negative(plan.ai_fte) * duration
+        usage[portfolio]["pm"] += _safe_non_negative(plan.pm_fte) * duration
+    return usage
+
+
+def _capacity_validate(
+    db: Session,
+    governance: GovernanceConfig,
+    portfolio: str,
+    proposed: dict[str, float],
+    duration_weeks: int,
+    exclude_bucket_item_id: int | None = None,
+) -> tuple[str, list[str], dict[str, str], str]:
+    usage_pw = _current_usage_pw(db)
+    if exclude_bucket_item_id:
+        existing = db.query(RoadmapPlanItem).filter(RoadmapPlanItem.bucket_item_id == exclude_bucket_item_id).first()
+        if existing:
+            existing_portfolio = _norm_portfolio(existing.project_context)
+            existing_duration = _usage_duration(existing.tentative_duration_weeks)
+            usage_pw[existing_portfolio]["fe"] -= _safe_non_negative(existing.fe_fte) * existing_duration
+            usage_pw[existing_portfolio]["be"] -= _safe_non_negative(existing.be_fte) * existing_duration
+            usage_pw[existing_portfolio]["ai"] -= _safe_non_negative(existing.ai_fte) * existing_duration
+            usage_pw[existing_portfolio]["pm"] -= _safe_non_negative(existing.pm_fte) * existing_duration
+
+    breach_roles: list[str] = []
+    utilization: dict[str, str] = {}
+    for role in ROLE_KEYS:
+        cap_pw = _capacity_limit_pw(governance, portfolio, role)
+        next_pw = usage_pw[portfolio][role] + _safe_non_negative(proposed.get(role, 0.0)) * duration_weeks
+        if cap_pw <= 0:
+            util_pct = 0.0 if next_pw <= 0 else 999.0
+        else:
+            util_pct = (next_pw / cap_pw) * 100.0
+        utilization[role.upper()] = f"{util_pct:.1f}%"
+        if util_pct > 100.0 + 1e-9:
+            breach_roles.append(role.upper())
+
+    if breach_roles:
+        return (
+            "REJECTED",
+            breach_roles,
+            utilization,
+            f"Capacity exceeded for roles: {', '.join(breach_roles)} in {portfolio} portfolio.",
+        )
+    return (
+        "APPROVED",
+        [],
+        utilization,
+        "Within configured capacity limits.",
+    )
+
+
+def _capacity_validate_timeline(
+    db: Session,
+    governance: GovernanceConfig,
+    portfolio: str,
+    proposed: dict[str, float],
+    planned_start_date: str,
+    planned_end_date: str,
+    exclude_bucket_item_id: int | None = None,
+) -> tuple[str, list[str], dict[str, str], str]:
+    parsed = _parse_plan_dates(planned_start_date, planned_end_date)
+    if not parsed:
+        return (
+            "REJECTED",
+            [],
+            {"FE": "0.0%", "BE": "0.0%", "AI": "0.0%", "PM": "0.0%"},
+            "Invalid planned date range. Use YYYY-MM-DD and ensure end date is not before start date.",
+        )
+    start, end = parsed
+    week_keys = _week_keys_between(start, end)
+    usage_weekly = _current_usage_weekly(db, exclude_bucket_item_id=exclude_bucket_item_id)
+
+    breach_roles: list[str] = []
+    breach_weeks: dict[str, str] = {}
+    peak_utilization: dict[str, float] = {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0}
+    for wk in week_keys:
+        existing = usage_weekly[portfolio].get(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0})
+        for role in ROLE_KEYS:
+            cap_weekly = _capacity_limit_weekly(governance, portfolio, role)
+            next_fte = existing[role] + _safe_non_negative(proposed.get(role, 0.0))
+            if cap_weekly <= 0:
+                util_pct = 0.0 if next_fte <= 0 else 999.0
+            else:
+                util_pct = (next_fte / cap_weekly) * 100.0
+            peak_utilization[role] = max(peak_utilization[role], util_pct)
+            if util_pct > 100.0 + 1e-9 and role.upper() not in breach_roles:
+                breach_roles.append(role.upper())
+                breach_weeks[role.upper()] = wk
+
+    utilization = {role.upper(): f"{peak_utilization[role]:.1f}%" for role in ROLE_KEYS}
+    if breach_roles:
+        breach_detail = ", ".join(f"{r} ({breach_weeks.get(r, '-')})" for r in breach_roles)
+        return (
+            "REJECTED",
+            breach_roles,
+            utilization,
+            f"Timeline overlap exceeds weekly capacity for: {breach_detail} in {portfolio} portfolio.",
+        )
+    return (
+        "APPROVED",
+        [],
+        utilization,
+        "Within configured weekly capacity limits for selected timeline.",
+    )
 
 
 def _tokens(text: str) -> list[str]:
@@ -314,6 +532,14 @@ def apply_redundancy_decision(
 
     primary.scope = merged_scope
     primary.activities = merged_activities
+    if primary.fe_fte is None and other.fe_fte is not None:
+        primary.fe_fte = other.fe_fte
+    if primary.be_fte is None and other.be_fte is not None:
+        primary.be_fte = other.be_fte
+    if primary.ai_fte is None and other.ai_fte is not None:
+        primary.ai_fte = other.ai_fte
+    if primary.pm_fte is None and other.pm_fte is not None:
+        primary.pm_fte = other.pm_fte
     if not primary.accountable_person and other.accountable_person:
         primary.accountable_person = other.accountable_person
     primary.picked_up = primary.picked_up or other.picked_up
@@ -328,6 +554,10 @@ def apply_redundancy_decision(
         other_plan.title = primary.title
         other_plan.scope = primary.scope
         other_plan.activities = primary.activities
+        other_plan.fe_fte = primary.fe_fte
+        other_plan.be_fte = primary.be_fte
+        other_plan.ai_fte = primary.ai_fte
+        other_plan.pm_fte = primary.pm_fte
         other_plan.priority = primary.priority
         other_plan.project_context = primary.project_context
         other_plan.initiative_type = primary.initiative_type
@@ -508,10 +738,47 @@ def update_roadmap_plan_item(
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap plan item not found")
 
-    item.planned_start_date = payload.planned_start_date.strip()
-    item.planned_end_date = payload.planned_end_date.strip()
-    item.resource_count = payload.resource_count
-    item.effort_person_weeks = payload.effort_person_weeks
+    start_date = payload.planned_start_date.strip()
+    end_date = payload.planned_end_date.strip()
+    if not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="Planned start and end dates are required.")
+    try:
+        duration_weeks = _duration_weeks_from_dates(start_date, end_date)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid planned start/end date format. Use YYYY-MM-DD.")
+
+    governance = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
+    if not governance:
+        raise HTTPException(status_code=409, detail="Governance configuration missing. CEO/VP must configure capacity first.")
+    if governance.quota_client + governance.quota_internal <= 0:
+        raise HTTPException(status_code=409, detail="Portfolio quotas are zero. Update governance quotas before planning.")
+
+    requested = {
+        "fe": _safe_non_negative(item.fe_fte),
+        "be": _safe_non_negative(item.be_fte),
+        "ai": _safe_non_negative(item.ai_fte),
+        "pm": _safe_non_negative(item.pm_fte),
+    }
+    status, _, _, reason = _capacity_validate_timeline(
+        db=db,
+        governance=governance,
+        portfolio=_norm_portfolio(item.project_context),
+        proposed=requested,
+        planned_start_date=start_date,
+        planned_end_date=end_date,
+        exclude_bucket_item_id=item.bucket_item_id,
+    )
+    if status != "APPROVED":
+        raise HTTPException(status_code=409, detail=reason)
+
+    total_fte = sum(requested.values())
+    item.planned_start_date = start_date
+    item.planned_end_date = end_date
+    item.tentative_duration_weeks = duration_weeks
+    item.resource_count = math.ceil(total_fte) if total_fte > 0 else 0
+    item.effort_person_weeks = math.ceil(total_fte * duration_weeks) if total_fte > 0 else 0
     item.planning_status = payload.planning_status.strip().lower()
     item.confidence = payload.confidence.strip().lower()
     item.dependency_ids = sorted(set(payload.dependency_ids))
@@ -554,6 +821,10 @@ def update_roadmap_item(
     item.rnd_decision_date = payload.rnd_decision_date.strip()
     item.rnd_next_gate = payload.rnd_next_gate.strip().lower()
     item.rnd_risk_level = payload.rnd_risk_level.strip().lower()
+    item.fe_fte = payload.fe_fte
+    item.be_fte = payload.be_fte
+    item.ai_fte = payload.ai_fte
+    item.pm_fte = payload.pm_fte
     item.accountable_person = payload.accountable_person.strip()
     item.picked_up = payload.picked_up
 
@@ -661,22 +932,109 @@ def bulk_delete_roadmap_items(
     return BulkDeleteOut(deleted=deleted)
 
 
+@router.post("/capacity/validate", response_model=CapacityValidateOut)
+def validate_capacity(
+    payload: CapacityValidateIn,
+    db: Session = Depends(get_db),
+    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.PM, UserRole.BA)),
+):
+    governance = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
+    if not governance:
+        return CapacityValidateOut(
+            status="REJECTED",
+            breach_roles=["FE", "BE", "AI", "PM"],
+            utilization_percentage={"FE": "0.0%", "BE": "0.0%", "AI": "0.0%", "PM": "0.0%"},
+            reason="Governance configuration missing. CEO/VP must configure capacity first.",
+        )
+
+    portfolio = _norm_portfolio(payload.project_context)
+    duration = _usage_duration(payload.tentative_duration_weeks)
+    proposed = {
+        "fe": _safe_non_negative(payload.fe_fte),
+        "be": _safe_non_negative(payload.be_fte),
+        "ai": _safe_non_negative(payload.ai_fte),
+        "pm": _safe_non_negative(payload.pm_fte),
+    }
+    if payload.planned_start_date.strip() and payload.planned_end_date.strip():
+        status, breaches, utilization, reason = _capacity_validate_timeline(
+            db=db,
+            governance=governance,
+            portfolio=portfolio,
+            proposed=proposed,
+            planned_start_date=payload.planned_start_date.strip(),
+            planned_end_date=payload.planned_end_date.strip(),
+            exclude_bucket_item_id=payload.exclude_bucket_item_id,
+        )
+    else:
+        status, breaches, utilization, reason = _capacity_validate(
+            db=db,
+            governance=governance,
+            portfolio=portfolio,
+            proposed=proposed,
+            duration_weeks=duration,
+            exclude_bucket_item_id=payload.exclude_bucket_item_id,
+        )
+    return CapacityValidateOut(
+        status=status,
+        breach_roles=breaches,
+        utilization_percentage=utilization,
+        reason=reason,
+    )
+
+
 @router.post("/plan/move", response_model=RoadmapMoveOut)
 def move_bucket_items_to_roadmap(
     payload: RoadmapMoveIn,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO, UserRole.VP)),
+    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.PM)),
 ):
     ids = sorted(set(payload.ids))
     if not ids:
         return RoadmapMoveOut(moved=0)
+    if not payload.tentative_duration_weeks or payload.tentative_duration_weeks <= 0:
+        raise HTTPException(status_code=400, detail="Tentative duration (weeks) is required to commit resources.")
+
+    governance = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
+    if not governance:
+        raise HTTPException(status_code=409, detail="Governance configuration missing. CEO/VP must configure capacity first.")
+    if governance.quota_client + governance.quota_internal <= 0:
+        raise HTTPException(status_code=409, detail="Portfolio quotas are zero. Update governance quotas before commit.")
 
     bucket_items = db.query(RoadmapItem).filter(RoadmapItem.id.in_(ids)).all()
     moved = 0
     for bucket in bucket_items:
         if not bucket.picked_up:
             continue
+        requested = {
+            "fe": _safe_non_negative(bucket.fe_fte),
+            "be": _safe_non_negative(bucket.be_fte),
+            "ai": _safe_non_negative(bucket.ai_fte),
+            "pm": _safe_non_negative(bucket.pm_fte),
+        }
+        if (bucket.fe_fte or 0) < 0 or (bucket.be_fte or 0) < 0 or (bucket.ai_fte or 0) < 0 or (bucket.pm_fte or 0) < 0:
+            raise HTTPException(status_code=400, detail=f"Negative FTE is not allowed for commitment '{bucket.title}'.")
+        if requested["fe"] + requested["be"] + requested["ai"] + requested["pm"] <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Set FE/BE/AI/PM resource commitments for '{bucket.title}' before confirming roadmap commitment.",
+            )
+
+        portfolio = _norm_portfolio(bucket.project_context)
         existing = db.query(RoadmapPlanItem).filter(RoadmapPlanItem.bucket_item_id == bucket.id).first()
+        status, breaches, utilization, reason = _capacity_validate(
+            db=db,
+            governance=governance,
+            portfolio=portfolio,
+            proposed=requested,
+            duration_weeks=payload.tentative_duration_weeks,
+            exclude_bucket_item_id=bucket.id if existing else None,
+        )
+        if status != "APPROVED":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Commitment blocked for '{bucket.title}'. {reason} Utilization: {utilization}.",
+            )
+
         if existing:
             existing.title = bucket.title
             existing.scope = bucket.scope
@@ -692,6 +1050,10 @@ def move_bucket_items_to_roadmap(
             existing.rnd_decision_date = bucket.rnd_decision_date
             existing.rnd_next_gate = bucket.rnd_next_gate
             existing.rnd_risk_level = bucket.rnd_risk_level
+            existing.fe_fte = bucket.fe_fte
+            existing.be_fte = bucket.be_fte
+            existing.ai_fte = bucket.ai_fte
+            existing.pm_fte = bucket.pm_fte
             existing.accountable_person = bucket.accountable_person
             existing.tentative_duration_weeks = payload.tentative_duration_weeks
             existing.pickup_period = payload.pickup_period.strip()
@@ -716,6 +1078,10 @@ def move_bucket_items_to_roadmap(
             rnd_decision_date=bucket.rnd_decision_date,
             rnd_next_gate=bucket.rnd_next_gate,
             rnd_risk_level=bucket.rnd_risk_level,
+            fe_fte=bucket.fe_fte,
+            be_fte=bucket.be_fte,
+            ai_fte=bucket.ai_fte,
+            pm_fte=bucket.pm_fte,
             accountable_person=bucket.accountable_person,
             tentative_duration_weeks=payload.tentative_duration_weeks,
             pickup_period=payload.pickup_period.strip(),

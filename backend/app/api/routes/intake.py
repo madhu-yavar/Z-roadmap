@@ -67,6 +67,10 @@ def _snapshot_roadmap(item: RoadmapItem) -> dict:
         "rnd_decision_date": item.rnd_decision_date,
         "rnd_next_gate": item.rnd_next_gate,
         "rnd_risk_level": item.rnd_risk_level,
+        "fe_fte": item.fe_fte,
+        "be_fte": item.be_fte,
+        "ai_fte": item.ai_fte,
+        "pm_fte": item.pm_fte,
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
     }

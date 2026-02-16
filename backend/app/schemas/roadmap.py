@@ -19,6 +19,10 @@ class RoadmapItemOut(BaseModel):
     rnd_decision_date: str
     rnd_next_gate: str
     rnd_risk_level: str
+    fe_fte: float | None
+    be_fte: float | None
+    ai_fte: float | None
+    pm_fte: float | None
     accountable_person: str
     picked_up: bool
     source_document_id: int | None
@@ -42,6 +46,10 @@ class RoadmapItemUpdateIn(BaseModel):
     rnd_decision_date: str
     rnd_next_gate: str
     rnd_risk_level: str
+    fe_fte: float | None
+    be_fte: float | None
+    ai_fte: float | None
+    pm_fte: float | None
     accountable_person: str
     picked_up: bool
 
@@ -78,6 +86,10 @@ class RoadmapPlanOut(BaseModel):
     rnd_decision_date: str
     rnd_next_gate: str
     rnd_risk_level: str
+    fe_fte: float | None
+    be_fte: float | None
+    ai_fte: float | None
+    pm_fte: float | None
     accountable_person: str
     entered_roadmap_at: datetime
     planned_start_date: str
@@ -103,6 +115,25 @@ class RoadmapPlanUpdateIn(BaseModel):
     planning_status: str = "not_started"
     confidence: str = "medium"
     dependency_ids: list[int] = []
+
+
+class CapacityValidateIn(BaseModel):
+    project_context: str = "internal"
+    tentative_duration_weeks: int = 1
+    planned_start_date: str = ""
+    planned_end_date: str = ""
+    fe_fte: float = 0.0
+    be_fte: float = 0.0
+    ai_fte: float = 0.0
+    pm_fte: float = 0.0
+    exclude_bucket_item_id: int | None = None
+
+
+class CapacityValidateOut(BaseModel):
+    status: str
+    breach_roles: list[str]
+    utilization_percentage: dict[str, str]
+    reason: str
 
 
 class RedundancyMatchOut(BaseModel):

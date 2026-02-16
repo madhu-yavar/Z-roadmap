@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -24,6 +24,10 @@ class RoadmapItem(Base):
     rnd_decision_date: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     rnd_next_gate: Mapped[str] = mapped_column(String(30), default="", nullable=False)
     rnd_risk_level: Mapped[str] = mapped_column(String(20), default="", nullable=False)
+    fe_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
+    be_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ai_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
+    pm_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     accountable_person: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     picked_up: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)

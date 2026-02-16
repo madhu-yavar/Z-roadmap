@@ -34,6 +34,10 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS rnd_decision_date VARCHAR(40) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS rnd_next_gate VARCHAR(30) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS rnd_risk_level VARCHAR(20) NOT NULL DEFAULT ''",
+        "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS fe_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS be_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS ai_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS pm_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS accountable_person VARCHAR(255) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS picked_up BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS accountable_person VARCHAR(255) NOT NULL DEFAULT ''",
@@ -45,6 +49,10 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS rnd_decision_date VARCHAR(40) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS rnd_next_gate VARCHAR(30) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS rnd_risk_level VARCHAR(20) NOT NULL DEFAULT ''",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS fe_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS be_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS ai_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS pm_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS planned_start_date VARCHAR(20) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS planned_end_date VARCHAR(20) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS resource_count INTEGER",
@@ -68,6 +76,25 @@ def _ensure_compat_columns() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS ix_redundancy_left_item_id ON roadmap_redundancy_decisions (left_item_id)",
         "CREATE INDEX IF NOT EXISTS ix_redundancy_right_item_id ON roadmap_redundancy_decisions (right_item_id)",
+        """
+        CREATE TABLE IF NOT EXISTS governance_configs (
+            id SERIAL PRIMARY KEY,
+            team_fe INTEGER NOT NULL DEFAULT 0,
+            team_be INTEGER NOT NULL DEFAULT 0,
+            team_ai INTEGER NOT NULL DEFAULT 0,
+            team_pm INTEGER NOT NULL DEFAULT 0,
+            efficiency_fe DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            efficiency_be DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            efficiency_ai DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            quota_client DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+            quota_internal DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+            updated_by INTEGER REFERENCES users(id),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """,
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_pm INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0",
     ]
     with engine.begin() as conn:
         for stmt in statements:

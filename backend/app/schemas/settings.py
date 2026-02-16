@@ -23,3 +23,35 @@ class LLMTestOut(BaseModel):
     provider: str
     model: str
     message: str
+
+
+class GovernanceOut(BaseModel):
+    id: int
+    team_fe: int
+    team_be: int
+    team_ai: int
+    team_pm: int
+    efficiency_fe: float
+    efficiency_be: float
+    efficiency_ai: float
+    efficiency_pm: float
+    quota_client: float
+    quota_internal: float
+
+    model_config = {"from_attributes": True}
+
+
+class GovernanceTeamIn(BaseModel):
+    team_fe: int = 0
+    team_be: int = 0
+    team_ai: int = 0
+    team_pm: int = 0
+    efficiency_fe: float = 1.0
+    efficiency_be: float = 1.0
+    efficiency_ai: float = 1.0
+    efficiency_pm: float = 1.0
+
+
+class GovernanceQuotaIn(BaseModel):
+    quota_client: float = 0.5
+    quota_internal: float = 0.5

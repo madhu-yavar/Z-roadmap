@@ -17,6 +17,10 @@ type RoadmapPlanItem = {
   rnd_decision_date: string
   rnd_next_gate: string
   rnd_risk_level: string
+  fe_fte: number | null
+  be_fte: number | null
+  ai_fte: number | null
+  pm_fte: number | null
   accountable_person: string
   entered_roadmap_at: string
   planned_start_date: string
@@ -31,8 +35,23 @@ type RoadmapPlanItem = {
   dependency_ids: number[]
 }
 
+type GovernanceConfig = {
+  id: number
+  team_fe: number
+  team_be: number
+  team_ai: number
+  team_pm: number
+  efficiency_fe: number
+  efficiency_be: number
+  efficiency_ai: number
+  efficiency_pm: number
+  quota_client: number
+  quota_internal: number
+}
+
 type DetailedRoadmapProps = {
   roadmapPlanItems: RoadmapPlanItem[]
+  governanceConfig: GovernanceConfig | null
   busy: boolean
 }
 
@@ -50,8 +69,13 @@ type TaskDecomposition = {
   totalEstimatedWeeks: number
   plannedStart: string
   plannedEnd: string
-  resources: number | null
-  effort: number | null
+  resources: number
+  effort: number
+  durationWeeks: number
+  feFte: number
+  beFte: number
+  aiFte: number
+  pmFte: number
 }
 
 type ActivityTask = {
@@ -60,7 +84,7 @@ type ActivityTask = {
   quarter: string
 }
 
-export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps) {
+export function DetailedRoadmap({ roadmapPlanItems, governanceConfig, busy }: DetailedRoadmapProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('task')
   const [quarterFilter, setQuarterFilter] = useState<QuarterFilter>('all')
   const [projectTypeFilter, setProjectTypeFilter] = useState<ProjectTypeFilter>('all')
@@ -97,8 +121,15 @@ export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps
         return quarterMatch && projectMatch && yearMatch
       })
       .map((item) => {
-        // Estimate task duration based on effort or use default
-        const totalWeeks = item.effort_person_weeks || item.tentative_duration_weeks || 4
+        const durationWeeks = item.tentative_duration_weeks && item.tentative_duration_weeks > 0 ? item.tentative_duration_weeks : 1
+        const feFte = Math.max(0, item.fe_fte || 0)
+        const beFte = Math.max(0, item.be_fte || 0)
+        const aiFte = Math.max(0, item.ai_fte || 0)
+        const pmFte = Math.max(0, item.pm_fte || 0)
+        const totalFte = feFte + beFte + aiFte + pmFte
+        const resources = totalFte > 0 ? Math.ceil(totalFte) : 0
+        const effort = Math.round(totalFte * durationWeeks * 10) / 10
+        const totalWeeks = durationWeeks
         const activitiesCount = item.activities.length || 1
         const weeksPerActivity = Math.round((totalWeeks / activitiesCount) * 10) / 10
 
@@ -131,8 +162,13 @@ export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps
           totalEstimatedWeeks: totalWeeks,
           plannedStart: item.planned_start_date,
           plannedEnd: item.planned_end_date,
-          resources: item.resource_count,
-          effort: item.effort_person_weeks,
+          resources,
+          effort,
+          durationWeeks,
+          feFte,
+          beFte,
+          aiFte,
+          pmFte,
         } as TaskDecomposition
       })
       .sort((a, b) => a.title.localeCompare(b.title))
@@ -192,6 +228,55 @@ export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps
       totalResources,
     }
   }, [taskDecompositions])
+
+  const capacityInsights = useMemo(() => {
+    const roleDemandPw = { FE: 0, BE: 0, AI: 0, PM: 0 }
+    const contexts = new Set<'client' | 'internal'>()
+    for (const item of taskDecompositions) {
+      contexts.add(item.projectContext === 'client' ? 'client' : 'internal')
+      roleDemandPw.FE += item.feFte * item.durationWeeks
+      roleDemandPw.BE += item.beFte * item.durationWeeks
+      roleDemandPw.AI += item.aiFte * item.durationWeeks
+      roleDemandPw.PM += item.pmFte * item.durationWeeks
+    }
+
+    if (!governanceConfig) {
+      return {
+        roleDemandPw,
+        roleCapacityPw: null,
+        roleUtilization: null,
+        contextLabel: contexts.size > 0 ? Array.from(contexts).join(' + ') : 'all',
+      }
+    }
+
+    const includeClient = contexts.size === 0 || contexts.has('client')
+    const includeInternal = contexts.size === 0 || contexts.has('internal')
+    const clientFactor = includeClient ? governanceConfig.quota_client : 0
+    const internalFactor = includeInternal ? governanceConfig.quota_internal : 0
+
+    const roleCapacityPw = {
+      FE: governanceConfig.team_fe * governanceConfig.efficiency_fe * 52 * (clientFactor + internalFactor),
+      BE: governanceConfig.team_be * governanceConfig.efficiency_be * 52 * (clientFactor + internalFactor),
+      AI: governanceConfig.team_ai * governanceConfig.efficiency_ai * 52 * (clientFactor + internalFactor),
+      PM: governanceConfig.team_pm * governanceConfig.efficiency_pm * 52 * (clientFactor + internalFactor),
+    }
+    const roleUtilization = {
+      FE: roleCapacityPw.FE <= 0 ? (roleDemandPw.FE <= 0 ? 0 : 999) : (roleDemandPw.FE / roleCapacityPw.FE) * 100,
+      BE: roleCapacityPw.BE <= 0 ? (roleDemandPw.BE <= 0 ? 0 : 999) : (roleDemandPw.BE / roleCapacityPw.BE) * 100,
+      AI: roleCapacityPw.AI <= 0 ? (roleDemandPw.AI <= 0 ? 0 : 999) : (roleDemandPw.AI / roleCapacityPw.AI) * 100,
+      PM: roleCapacityPw.PM <= 0 ? (roleDemandPw.PM <= 0 ? 0 : 999) : (roleDemandPw.PM / roleCapacityPw.PM) * 100,
+    }
+
+    return {
+      roleDemandPw,
+      roleCapacityPw,
+      roleUtilization,
+      contextLabel: [
+        includeClient ? 'client' : '',
+        includeInternal ? 'internal' : '',
+      ].filter(Boolean).join(' + ') || 'all',
+    }
+  }, [taskDecompositions, governanceConfig])
 
   const toggleExpanded = (itemId: number) => {
     setExpandedItems((prev) => {
@@ -290,11 +375,47 @@ export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps
           </div>
           <div className="metric-item">
             <span className="metric-value">{metrics.totalEffort}</span>
-            <span className="metric-label">Total Weeks</span>
+            <span className="metric-label">Total Person-Weeks</span>
           </div>
           <div className="metric-item">
             <span className="metric-value">{metrics.totalResources}</span>
-            <span className="metric-label">Resources</span>
+            <span className="metric-label">Total FTE Needed</span>
+          </div>
+        </div>
+
+        <div className="analytics-capacity-summary">
+          <div className="line-item">
+            <strong>Capacity Utilization (Filtered {selectedYear})</strong>
+            <span className="muted">Contexts: {capacityInsights.contextLabel}</span>
+          </div>
+          {!capacityInsights.roleCapacityPw && (
+            <p className="muted">Governance config missing. Capacity utilization is unavailable.</p>
+          )}
+          <div className="analytics-capacity-grid">
+            {(['FE', 'BE', 'AI', 'PM'] as const).map((role) => {
+              const demand = capacityInsights.roleDemandPw[role]
+              const capacity = capacityInsights.roleCapacityPw?.[role] || 0
+              const utilization = capacityInsights.roleUtilization?.[role] || 0
+              const tone = utilization > 100 ? 'error' : utilization >= 85 ? 'warn' : 'ok'
+              return (
+                <article key={role} className="analytics-capacity-card">
+                  <div className="line-item">
+                    <span className="mono">{role}</span>
+                    <span className={`capacity-meter-state ${tone}`}>{utilization.toFixed(1)}%</span>
+                  </div>
+                  <p className="muted">{demand.toFixed(1)} pw demand / {capacity.toFixed(1)} pw capacity</p>
+                  <div className="mini-progress-bar">
+                    <div
+                      className="mini-progress-fill"
+                      style={{
+                        width: `${Math.min(100, utilization)}%`,
+                        backgroundColor: tone === 'error' ? '#ef4444' : tone === 'warn' ? '#f59e0b' : '#10b981',
+                      }}
+                    />
+                  </div>
+                </article>
+              )
+            })}
           </div>
         </div>
       </section>
@@ -478,7 +599,7 @@ export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps
                     <span>•</span>
                     <span>{items.reduce((sum, d) => sum + d.activities.length, 0)} activities</span>
                     <span>•</span>
-                    <span>{items.reduce((sum, d) => sum + (d.effort || 0), 0).toFixed(0)} weeks</span>
+                    <span>{items.reduce((sum, d) => sum + d.effort, 0).toFixed(0)} pw</span>
                   </div>
                 </div>
 
@@ -542,7 +663,10 @@ export function DetailedRoadmap({ roadmapPlanItems, busy }: DetailedRoadmapProps
                       <div className="mini-progress-bar">
                         <div
                           className="mini-progress-fill"
-                          style={{ width: `${Math.min(100, (decomp.effort || 0) / decomp.totalEstimatedWeeks * 100)}%`, backgroundColor: typeColor }}
+                          style={{
+                            width: `${Math.min(100, (decomp.durationWeeks / 52) * 100)}%`,
+                            backgroundColor: typeColor,
+                          }}
                         />
                       </div>
                     </div>

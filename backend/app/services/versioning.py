@@ -40,6 +40,10 @@ ROADMAP_KEYS = [
     "rnd_decision_date",
     "rnd_next_gate",
     "rnd_risk_level",
+    "fe_fte",
+    "be_fte",
+    "ai_fte",
+    "pm_fte",
     "accountable_person",
     "picked_up",
 ]

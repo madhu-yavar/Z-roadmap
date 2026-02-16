@@ -1,5 +1,6 @@
 from app.models.document import Document
 from app.models.feature import Feature
+from app.models.governance_config import GovernanceConfig
 from app.models.intake_analysis import IntakeAnalysis
 from app.models.intake_item import IntakeItem
 from app.models.intake_item_version import IntakeItemVersion
@@ -15,6 +16,7 @@ __all__ = [
     "Project",
     "Feature",
     "Document",
+    "GovernanceConfig",
     "IntakeAnalysis",
     "IntakeItem",
     "IntakeItemVersion",

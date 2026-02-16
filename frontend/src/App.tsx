@@ -80,6 +80,10 @@ type RoadmapItem = {
   rnd_decision_date: string
   rnd_next_gate: string
   rnd_risk_level: string
+  fe_fte: number | null
+  be_fte: number | null
+  ai_fte: number | null
+  pm_fte: number | null
   accountable_person: string
   picked_up: boolean
   source_document_id: number | null
@@ -113,6 +117,32 @@ type LLMTestResult = {
   provider: string
   model: string
   message: string
+}
+
+type GovernanceConfig = {
+  id: number
+  team_fe: number
+  team_be: number
+  team_ai: number
+  team_pm: number
+  efficiency_fe: number
+  efficiency_be: number
+  efficiency_ai: number
+  efficiency_pm: number
+  quota_client: number
+  quota_internal: number
+}
+
+type CapacityValidationResult = {
+  status: 'APPROVED' | 'REJECTED'
+  breach_roles: string[]
+  utilization_percentage: {
+    FE: string
+    BE: string
+    AI: string
+    PM: string
+  }
+  reason: string
 }
 
 type VersionItem = {
@@ -199,6 +229,10 @@ type RoadmapPlanItem = {
   rnd_decision_date: string
   rnd_next_gate: string
   rnd_risk_level: string
+  fe_fte: number | null
+  be_fte: number | null
+  ai_fte: number | null
+  pm_fte: number | null
   accountable_person: string
   entered_roadmap_at: string
   planned_start_date: string
@@ -283,6 +317,119 @@ function fmtDate(value: string): string {
   } catch {
     return value
   }
+}
+
+function parsePercent(value: string | undefined): number {
+  const n = Number(String(value || '').replace('%', '').trim())
+  if (!Number.isFinite(n)) return 0
+  return n
+}
+
+function capacityTone(usedPercent: number): 'ok' | 'warn' | 'error' {
+  if (usedPercent > 100) return 'error'
+  if (usedPercent >= 85) return 'warn'
+  return 'ok'
+}
+
+function CapacityMeters({
+  title,
+  utilization,
+}: {
+  title: string
+  utilization: CapacityValidationResult['utilization_percentage']
+}) {
+  const roles: Array<'FE' | 'BE' | 'AI' | 'PM'> = ['FE', 'BE', 'AI', 'PM']
+  return (
+    <div className="capacity-meter-wrap">
+      <div className="line-item">
+        <strong>{title}</strong>
+      </div>
+      <div className="capacity-meter-grid">
+        {roles.map((role) => {
+          const used = Math.max(0, parsePercent(utilization[role]))
+          const available = Math.max(0, 100 - used)
+          const tone = capacityTone(used)
+          const overBy = used > 100 ? used - 100 : 0
+          return (
+            <div key={role} className="capacity-meter-card">
+              <div className="capacity-meter-head">
+                <span>{role}</span>
+                <span className={`capacity-meter-state ${tone}`}>
+                  {used.toFixed(1)}% used
+                </span>
+              </div>
+              <div className="capacity-meter-track" aria-hidden="true">
+                <div
+                  className={`capacity-meter-fill ${tone}`}
+                  style={{ width: `${Math.min(used, 100)}%` }}
+                />
+              </div>
+              <div className="capacity-meter-foot">
+                <span className="muted">
+                  {overBy > 0 ? `Over by ${overBy.toFixed(1)}%` : `Available ${available.toFixed(1)}%`}
+                </span>
+                <span className="mono">{utilization[role]}</span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+type RoleTotals = {
+  FE: number
+  BE: number
+  AI: number
+  PM: number
+}
+
+function emptyRoleTotals(): RoleTotals {
+  return { FE: 0, BE: 0, AI: 0, PM: 0 }
+}
+
+function parseIsoDate(value: string): Date | null {
+  if (!value) return null
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+function isDateInRange(date: Date, start: Date, end: Date): boolean {
+  const at = date.getTime()
+  return at >= start.getTime() && at <= end.getTime()
+}
+
+function addPlanFte(usage: RoleTotals, plan: RoadmapPlanItem): RoleTotals {
+  return {
+    FE: usage.FE + Math.max(0, plan.fe_fte || 0),
+    BE: usage.BE + Math.max(0, plan.be_fte || 0),
+    AI: usage.AI + Math.max(0, plan.ai_fte || 0),
+    PM: usage.PM + Math.max(0, plan.pm_fte || 0),
+  }
+}
+
+function weeklyCapacityByPortfolio(governanceConfig: GovernanceConfig | null, portfolio: 'client' | 'internal'): RoleTotals {
+  if (!governanceConfig) return emptyRoleTotals()
+  const quota = portfolio === 'client' ? governanceConfig.quota_client : governanceConfig.quota_internal
+  return {
+    FE: Math.max(0, governanceConfig.team_fe * governanceConfig.efficiency_fe * quota),
+    BE: Math.max(0, governanceConfig.team_be * governanceConfig.efficiency_be * quota),
+    AI: Math.max(0, governanceConfig.team_ai * governanceConfig.efficiency_ai * quota),
+    PM: Math.max(0, governanceConfig.team_pm * governanceConfig.efficiency_pm * quota),
+  }
+}
+
+function utilizationFromUsage(usage: RoleTotals, capacity: RoleTotals): CapacityValidationResult['utilization_percentage'] {
+  const roles: Array<keyof RoleTotals> = ['FE', 'BE', 'AI', 'PM']
+  const out: CapacityValidationResult['utilization_percentage'] = { FE: '0.0%', BE: '0.0%', AI: '0.0%', PM: '0.0%' }
+  for (const role of roles) {
+    const used = usage[role]
+    const cap = capacity[role]
+    const pct = cap <= 0 ? (used <= 0 ? 0 : 999) : (used / cap) * 100
+    out[role] = `${pct.toFixed(1)}%`
+  }
+  return out
 }
 
 type ActivityTag = 'FE' | 'BE' | 'AI'
@@ -374,6 +521,10 @@ function App() {
   const [roadmapRndDecisionDate, setRoadmapRndDecisionDate] = useState('')
   const [roadmapRndNextGate, setRoadmapRndNextGate] = useState('')
   const [roadmapRndRiskLevel, setRoadmapRndRiskLevel] = useState('')
+  const [roadmapFeFte, setRoadmapFeFte] = useState('')
+  const [roadmapBeFte, setRoadmapBeFte] = useState('')
+  const [roadmapAiFte, setRoadmapAiFte] = useState('')
+  const [roadmapPmFte, setRoadmapPmFte] = useState('')
   const [roadmapAccountablePerson, setRoadmapAccountablePerson] = useState('')
   const [roadmapPickedUp, setRoadmapPickedUp] = useState(false)
   const [selectedRoadmapIds, setSelectedRoadmapIds] = useState<number[]>([])
@@ -389,6 +540,7 @@ function App() {
     base_url: 'http://localhost:11434/v1',
     api_key: '',
   })
+  const [governanceConfig, setGovernanceConfig] = useState<GovernanceConfig | null>(null)
   const [useCustomModel, setUseCustomModel] = useState(false)
   const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null)
   const [chatSupportRequest, setChatSupportRequest] = useState<{
@@ -417,11 +569,57 @@ function App() {
     [roadmapItems, selectedRoadmapId],
   )
 
+  useEffect(() => {
+    if (!selectedRoadmapItem) {
+      setRoadmapTitle('')
+      setRoadmapScope('')
+      setRoadmapActivities([])
+      setRoadmapPriority('medium')
+      setRoadmapProjectContext('client')
+      setRoadmapInitiativeType('new_feature')
+      setRoadmapDeliveryMode('standard')
+      setRoadmapRndHypothesis('')
+      setRoadmapRndExperimentGoal('')
+      setRoadmapRndSuccessCriteria('')
+      setRoadmapRndTimeboxWeeks(null)
+      setRoadmapRndDecisionDate('')
+      setRoadmapRndNextGate('')
+      setRoadmapRndRiskLevel('')
+      setRoadmapFeFte('')
+      setRoadmapBeFte('')
+      setRoadmapAiFte('')
+      setRoadmapPmFte('')
+      setRoadmapAccountablePerson('')
+      setRoadmapPickedUp(false)
+      return
+    }
+    setRoadmapTitle(selectedRoadmapItem.title)
+    setRoadmapScope(selectedRoadmapItem.scope)
+    setRoadmapActivities(selectedRoadmapItem.activities)
+    setRoadmapPriority(selectedRoadmapItem.priority || 'medium')
+    setRoadmapProjectContext(selectedRoadmapItem.project_context || 'client')
+    setRoadmapInitiativeType(selectedRoadmapItem.initiative_type || 'new_feature')
+    setRoadmapDeliveryMode(selectedRoadmapItem.delivery_mode || 'standard')
+    setRoadmapRndHypothesis(selectedRoadmapItem.rnd_hypothesis || '')
+    setRoadmapRndExperimentGoal(selectedRoadmapItem.rnd_experiment_goal || '')
+    setRoadmapRndSuccessCriteria(selectedRoadmapItem.rnd_success_criteria || '')
+    setRoadmapRndTimeboxWeeks(selectedRoadmapItem.rnd_timebox_weeks ?? null)
+    setRoadmapRndDecisionDate(selectedRoadmapItem.rnd_decision_date || '')
+    setRoadmapRndNextGate(selectedRoadmapItem.rnd_next_gate || '')
+    setRoadmapRndRiskLevel(selectedRoadmapItem.rnd_risk_level || '')
+    setRoadmapFeFte(selectedRoadmapItem.fe_fte == null ? '' : String(selectedRoadmapItem.fe_fte))
+    setRoadmapBeFte(selectedRoadmapItem.be_fte == null ? '' : String(selectedRoadmapItem.be_fte))
+    setRoadmapAiFte(selectedRoadmapItem.ai_fte == null ? '' : String(selectedRoadmapItem.ai_fte))
+    setRoadmapPmFte(selectedRoadmapItem.pm_fte == null ? '' : String(selectedRoadmapItem.pm_fte))
+    setRoadmapAccountablePerson(selectedRoadmapItem.accountable_person || '')
+    setRoadmapPickedUp(Boolean(selectedRoadmapItem.picked_up))
+  }, [selectedRoadmapItem])
+
   const isCEO = currentUser?.role === 'CEO'
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
 
   async function loadData(activeToken: string) {
-    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes] =
+    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes] =
       await Promise.allSettled([
         api<CurrentUser>('/auth/me', {}, activeToken),
         api<Dashboard>('/dashboard/summary', {}, activeToken),
@@ -431,6 +629,7 @@ function App() {
         api<RoadmapPlanItem[]>('/roadmap/plan/items', {}, activeToken),
         api<RoadmapRedundancy[]>('/roadmap/items/redundancy', {}, activeToken),
         api<LLMConfig[]>('/settings/llm', {}, activeToken),
+        api<GovernanceConfig>('/settings/governance', {}, activeToken),
       ])
 
     if (meRes.status !== 'fulfilled') throw meRes.reason
@@ -449,6 +648,7 @@ function App() {
         : '',
     )
     setLlmConfigs(cfgRes.status === 'fulfilled' ? cfgRes.value : [])
+    setGovernanceConfig(governanceRes.status === 'fulfilled' ? governanceRes.value : null)
   }
 
   async function fetchDocumentBlob(documentId: number): Promise<{ blob: Blob; contentType: string }> {
@@ -776,22 +976,56 @@ function App() {
 
   async function startRoadmapEdit(item: RoadmapItem) {
     setSelectedRoadmapId(item.id)
-    setRoadmapTitle(item.title)
-    setRoadmapScope(item.scope)
-    setRoadmapActivities(item.activities.length ? item.activities : [''])
-    setRoadmapPriority(item.priority || 'medium')
-    setRoadmapProjectContext(item.project_context || 'client')
-    setRoadmapInitiativeType(item.initiative_type || 'new_feature')
-    setRoadmapDeliveryMode(item.delivery_mode || 'standard')
-    setRoadmapRndHypothesis(item.rnd_hypothesis || '')
-    setRoadmapRndExperimentGoal(item.rnd_experiment_goal || '')
-    setRoadmapRndSuccessCriteria(item.rnd_success_criteria || '')
-    setRoadmapRndTimeboxWeeks(item.rnd_timebox_weeks ?? null)
-    setRoadmapRndDecisionDate(item.rnd_decision_date || '')
-    setRoadmapRndNextGate(item.rnd_next_gate || '')
-    setRoadmapRndRiskLevel(item.rnd_risk_level || '')
-    setRoadmapAccountablePerson(item.accountable_person || '')
-    setRoadmapPickedUp(Boolean(item.picked_up))
+  }
+
+  function roadmapUpdatePayload() {
+    const parsedFe = Number(roadmapFeFte)
+    const parsedBe = Number(roadmapBeFte)
+    const parsedAi = Number(roadmapAiFte)
+    const parsedPm = Number(roadmapPmFte)
+    return {
+      title: roadmapTitle,
+      scope: roadmapScope,
+      activities: roadmapActivities.map((x) => x.trim()).filter(Boolean),
+      priority: roadmapPriority,
+      project_context: roadmapProjectContext,
+      initiative_type: roadmapInitiativeType,
+      delivery_mode: roadmapDeliveryMode,
+      rnd_hypothesis: roadmapRndHypothesis,
+      rnd_experiment_goal: roadmapRndExperimentGoal,
+      rnd_success_criteria: roadmapRndSuccessCriteria,
+      rnd_timebox_weeks: roadmapRndTimeboxWeeks,
+      rnd_decision_date: roadmapRndDecisionDate,
+      rnd_next_gate: roadmapRndNextGate,
+      rnd_risk_level: roadmapRndRiskLevel,
+      fe_fte: Number.isFinite(parsedFe) && parsedFe >= 0 ? parsedFe : null,
+      be_fte: Number.isFinite(parsedBe) && parsedBe >= 0 ? parsedBe : null,
+      ai_fte: Number.isFinite(parsedAi) && parsedAi >= 0 ? parsedAi : null,
+      pm_fte: Number.isFinite(parsedPm) && parsedPm >= 0 ? parsedPm : null,
+      accountable_person: roadmapAccountablePerson,
+      picked_up: roadmapPickedUp,
+    }
+  }
+
+  async function saveRoadmapCandidate(itemId: number) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<RoadmapItem>(
+        `/roadmap/items/${itemId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(roadmapUpdatePayload()),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Saving commitment shaping failed')
+    } finally {
+      setBusy(false)
+    }
   }
 
   async function commitSelectedToRoadmap(itemId: number) {
@@ -803,24 +1037,7 @@ function App() {
         `/roadmap/items/${itemId}`,
         {
           method: 'PATCH',
-          body: JSON.stringify({
-            title: roadmapTitle,
-            scope: roadmapScope,
-            activities: roadmapActivities.map((x) => x.trim()).filter(Boolean),
-            priority: roadmapPriority,
-            project_context: roadmapProjectContext,
-            initiative_type: roadmapInitiativeType,
-            delivery_mode: roadmapDeliveryMode,
-            rnd_hypothesis: roadmapRndHypothesis,
-            rnd_experiment_goal: roadmapRndExperimentGoal,
-            rnd_success_criteria: roadmapRndSuccessCriteria,
-            rnd_timebox_weeks: roadmapRndTimeboxWeeks,
-            rnd_decision_date: roadmapRndDecisionDate,
-            rnd_next_gate: roadmapRndNextGate,
-            rnd_risk_level: roadmapRndRiskLevel,
-            accountable_person: roadmapAccountablePerson,
-            picked_up: roadmapPickedUp,
-          }),
+          body: JSON.stringify(roadmapUpdatePayload()),
         },
         token,
       )
@@ -1013,6 +1230,99 @@ function App() {
     }
   }
 
+  function toNumberOrZero(value: string): number {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return 0
+    return n
+  }
+
+  async function saveGovernanceTeamConfig(payload: {
+    team_fe: string
+    team_be: string
+    team_ai: string
+    team_pm: string
+    efficiency_fe: string
+    efficiency_be: string
+    efficiency_ai: string
+    efficiency_pm: string
+  }) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      const cfg = await api<GovernanceConfig>(
+        '/settings/governance/team-config',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            team_fe: Math.max(0, Math.round(toNumberOrZero(payload.team_fe))),
+            team_be: Math.max(0, Math.round(toNumberOrZero(payload.team_be))),
+            team_ai: Math.max(0, Math.round(toNumberOrZero(payload.team_ai))),
+            team_pm: Math.max(0, Math.round(toNumberOrZero(payload.team_pm))),
+            efficiency_fe: Math.max(0, toNumberOrZero(payload.efficiency_fe)),
+            efficiency_be: Math.max(0, toNumberOrZero(payload.efficiency_be)),
+            efficiency_ai: Math.max(0, toNumberOrZero(payload.efficiency_ai)),
+            efficiency_pm: Math.max(0, toNumberOrZero(payload.efficiency_pm)),
+          }),
+        },
+        token,
+      )
+      setGovernanceConfig(cfg)
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Governance team settings update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveGovernanceQuotas(payload: { quota_client: string; quota_internal: string }) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      const cfg = await api<GovernanceConfig>(
+        '/settings/governance/portfolio-quotas',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            quota_client: Math.max(0, toNumberOrZero(payload.quota_client)),
+            quota_internal: Math.max(0, toNumberOrZero(payload.quota_internal)),
+          }),
+        },
+        token,
+      )
+      setGovernanceConfig(cfg)
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Governance quota update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function validateCapacity(payload: {
+    project_context: string
+    tentative_duration_weeks: number
+    planned_start_date?: string
+    planned_end_date?: string
+    fe_fte: number
+    be_fte: number
+    ai_fte: number
+    pm_fte: number
+    exclude_bucket_item_id?: number
+  }) {
+    if (!token) throw new Error('Login required')
+    return api<CapacityValidationResult>(
+      '/roadmap/capacity/validate',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+      token,
+    )
+  }
+
   function logout() {
     localStorage.removeItem('token')
     setToken(null)
@@ -1023,6 +1333,7 @@ function App() {
     setRoadmapItems([])
     setRoadmapPlanItems([])
     setLlmConfigs([])
+    setGovernanceConfig(null)
     setIntakeHistory([])
     setSelectedAnalysis(null)
     setSelectedRoadmapIds([])
@@ -1128,7 +1439,16 @@ function App() {
       )}
 
       <Routes>
-        <Route path="/dashboard" element={<DashboardPage dashboard={dashboard} />} />
+        <Route
+          path="/dashboard"
+          element={
+            <DashboardPage
+              dashboard={dashboard}
+              roadmapPlanItems={roadmapPlanItems}
+              governanceConfig={governanceConfig}
+            />
+          }
+        />
         <Route
           path="/intake"
           element={
@@ -1182,7 +1502,9 @@ function App() {
               startRoadmapEdit={startRoadmapEdit}
               roadmapTitle={roadmapTitle}
               roadmapScope={roadmapScope}
+              setRoadmapScope={setRoadmapScope}
               roadmapActivities={roadmapActivities}
+              setRoadmapActivities={setRoadmapActivities}
               roadmapDeliveryMode={roadmapDeliveryMode}
               roadmapRndHypothesis={roadmapRndHypothesis}
               roadmapRndExperimentGoal={roadmapRndExperimentGoal}
@@ -1191,6 +1513,14 @@ function App() {
               roadmapRndDecisionDate={roadmapRndDecisionDate}
               roadmapRndNextGate={roadmapRndNextGate}
               roadmapRndRiskLevel={roadmapRndRiskLevel}
+              roadmapFeFte={roadmapFeFte}
+              setRoadmapFeFte={setRoadmapFeFte}
+              roadmapBeFte={roadmapBeFte}
+              setRoadmapBeFte={setRoadmapBeFte}
+              roadmapAiFte={roadmapAiFte}
+              setRoadmapAiFte={setRoadmapAiFte}
+              roadmapPmFte={roadmapPmFte}
+              setRoadmapPmFte={setRoadmapPmFte}
               roadmapAccountablePerson={roadmapAccountablePerson}
               setRoadmapAccountablePerson={setRoadmapAccountablePerson}
               setRoadmapPickedUp={setRoadmapPickedUp}
@@ -1203,6 +1533,8 @@ function App() {
               roadmapPlanItems={roadmapPlanItems}
               roadmapRedundancy={roadmapRedundancy}
               roadmapRedundancyError={roadmapRedundancyError}
+              validateCapacity={validateCapacity}
+              saveRoadmapCandidate={saveRoadmapCandidate}
               commitSelectedToRoadmap={commitSelectedToRoadmap}
               unlockRoadmapCommitment={unlockRoadmapCommitment}
               applyRedundancyDecision={applyRedundancyDecision}
@@ -1216,6 +1548,7 @@ function App() {
             <RoadmapAgentPage
               roadmapPlanItems={roadmapPlanItems}
               updateRoadmapPlanItem={updateRoadmapPlanItem}
+              validateCapacity={validateCapacity}
               downloadRoadmapPlanExcel={downloadRoadmapPlanExcel}
               busy={busy}
             />
@@ -1223,7 +1556,7 @@ function App() {
         />
         <Route
           path="/detailed-roadmap"
-          element={<DetailedRoadmap roadmapPlanItems={roadmapPlanItems} busy={busy} />}
+          element={<DetailedRoadmap roadmapPlanItems={roadmapPlanItems} governanceConfig={governanceConfig} busy={busy} />}
         />
         <Route
           path="/settings"
@@ -1231,12 +1564,16 @@ function App() {
             <SettingsPage
               activeConfig={activeConfig || null}
               llmConfigs={llmConfigs}
+              governanceConfig={governanceConfig}
+              currentUserRole={currentUser?.role || 'PM'}
               providerForm={providerForm}
               setProviderForm={setProviderForm}
               useCustomModel={useCustomModel}
               setUseCustomModel={setUseCustomModel}
               saveLLMConfig={saveLLMConfig}
               testLLMConfig={testLLMConfig}
+              saveGovernanceTeamConfig={saveGovernanceTeamConfig}
+              saveGovernanceQuotas={saveGovernanceQuotas}
               llmTestResult={llmTestResult}
               busy={busy}
             />
@@ -1293,10 +1630,46 @@ function App() {
 
 type DashboardProps = {
   dashboard: Dashboard | null
+  roadmapPlanItems: RoadmapPlanItem[]
+  governanceConfig: GovernanceConfig | null
 }
 
-function DashboardPage({ dashboard }: DashboardProps) {
+function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: DashboardProps) {
   const count = (m: Record<string, number> | undefined, key: string) => Number(m?.[key] || 0)
+  const today = useMemo(() => new Date(), [])
+  const capacitySnapshot = useMemo(() => {
+    const usage = {
+      client: emptyRoleTotals(),
+      internal: emptyRoleTotals(),
+    }
+    let unscheduled = 0
+    let activeNow = 0
+    for (const item of roadmapPlanItems) {
+      const start = parseIsoDate(item.planned_start_date)
+      const end = parseIsoDate(item.planned_end_date)
+      if (!start || !end || end < start) {
+        unscheduled += 1
+        continue
+      }
+      if (!isDateInRange(today, start, end)) continue
+      activeNow += 1
+      const portfolio = item.project_context === 'client' ? 'client' : 'internal'
+      usage[portfolio] = addPlanFte(usage[portfolio], item)
+    }
+    const capacity = {
+      client: weeklyCapacityByPortfolio(governanceConfig, 'client'),
+      internal: weeklyCapacityByPortfolio(governanceConfig, 'internal'),
+    }
+    return {
+      usage,
+      capacity,
+      clientUtilization: utilizationFromUsage(usage.client, capacity.client),
+      internalUtilization: utilizationFromUsage(usage.internal, capacity.internal),
+      unscheduled,
+      activeNow,
+    }
+  }, [roadmapPlanItems, governanceConfig, today])
+
   const stageData = [
     { stage: 'Intake', count: dashboard?.intake_total || 0 },
     { stage: 'Commitments', count: dashboard?.commitments_total || 0 },
@@ -1372,6 +1745,39 @@ function DashboardPage({ dashboard }: DashboardProps) {
         <article className="metric-card">
           <p>Understanding Pending</p>
           <h2>{dashboard?.intake_understanding_pending ?? 0}</h2>
+        </article>
+      </section>
+
+      <section className="card-grid two">
+        <article className="panel-card">
+          <h3>Client Portfolio Weekly Capacity</h3>
+          <p className="muted">Active timeline utilization for the current date.</p>
+          {governanceConfig ? (
+            <CapacityMeters
+              title={`Client Utilization (${today.toLocaleDateString()})`}
+              utilization={capacitySnapshot.clientUtilization}
+            />
+          ) : (
+            <p className="muted">Governance configuration is missing. Set team sizes, efficiency, and quotas in Settings.</p>
+          )}
+        </article>
+        <article className="panel-card">
+          <h3>Internal Portfolio Weekly Capacity</h3>
+          <p className="muted">Active timeline utilization for the current date.</p>
+          {governanceConfig ? (
+            <CapacityMeters
+              title={`Internal Utilization (${today.toLocaleDateString()})`}
+              utilization={capacitySnapshot.internalUtilization}
+            />
+          ) : (
+            <p className="muted">Governance configuration is missing. Set team sizes, efficiency, and quotas in Settings.</p>
+          )}
+          <div className="line-item">
+            <span className="muted">Active commitments now: {capacitySnapshot.activeNow}</span>
+            <span className={capacitySnapshot.unscheduled > 0 ? 'capacity-meter-state error' : 'muted'}>
+              Unscheduled commitments: {capacitySnapshot.unscheduled}
+            </span>
+          </div>
         </article>
       </section>
 
@@ -2593,7 +2999,9 @@ type RoadmapProps = {
   startRoadmapEdit: (item: RoadmapItem) => Promise<void>
   roadmapTitle: string
   roadmapScope: string
+  setRoadmapScope: Dispatch<SetStateAction<string>>
   roadmapActivities: string[]
+  setRoadmapActivities: Dispatch<SetStateAction<string[]>>
   roadmapDeliveryMode: string
   roadmapRndHypothesis: string
   roadmapRndExperimentGoal: string
@@ -2602,6 +3010,14 @@ type RoadmapProps = {
   roadmapRndDecisionDate: string
   roadmapRndNextGate: string
   roadmapRndRiskLevel: string
+  roadmapFeFte: string
+  setRoadmapFeFte: Dispatch<SetStateAction<string>>
+  roadmapBeFte: string
+  setRoadmapBeFte: Dispatch<SetStateAction<string>>
+  roadmapAiFte: string
+  setRoadmapAiFte: Dispatch<SetStateAction<string>>
+  roadmapPmFte: string
+  setRoadmapPmFte: Dispatch<SetStateAction<string>>
   roadmapAccountablePerson: string
   setRoadmapAccountablePerson: Dispatch<SetStateAction<string>>
   setRoadmapPickedUp: Dispatch<SetStateAction<boolean>>
@@ -2621,6 +3037,18 @@ type RoadmapProps = {
       completion_period: string
     }>
   >
+  validateCapacity: (payload: {
+    project_context: string
+    tentative_duration_weeks: number
+    planned_start_date?: string
+    planned_end_date?: string
+    fe_fte: number
+    be_fte: number
+    ai_fte: number
+    pm_fte: number
+    exclude_bucket_item_id?: number
+  }) => Promise<CapacityValidationResult>
+  saveRoadmapCandidate: (itemId: number) => Promise<void>
   commitSelectedToRoadmap: (itemId: number) => Promise<void>
   unlockRoadmapCommitment: (itemId: number) => Promise<void>
   applyRedundancyDecision: (
@@ -2641,7 +3069,9 @@ function RoadmapPage({
   startRoadmapEdit,
   roadmapTitle,
   roadmapScope,
+  setRoadmapScope,
   roadmapActivities,
+  setRoadmapActivities,
   roadmapDeliveryMode,
   roadmapRndHypothesis,
   roadmapRndExperimentGoal,
@@ -2650,6 +3080,14 @@ function RoadmapPage({
   roadmapRndDecisionDate,
   roadmapRndNextGate,
   roadmapRndRiskLevel,
+  roadmapFeFte,
+  setRoadmapFeFte,
+  roadmapBeFte,
+  setRoadmapBeFte,
+  roadmapAiFte,
+  setRoadmapAiFte,
+  roadmapPmFte,
+  setRoadmapPmFte,
   roadmapAccountablePerson,
   setRoadmapAccountablePerson,
   setRoadmapPickedUp,
@@ -2659,6 +3097,8 @@ function RoadmapPage({
   bulkDeleteRoadmap,
   roadmapMove,
   setRoadmapMove,
+  validateCapacity,
+  saveRoadmapCandidate,
   commitSelectedToRoadmap,
   unlockRoadmapCommitment,
   applyRedundancyDecision,
@@ -2666,6 +3106,9 @@ function RoadmapPage({
 }: RoadmapProps) {
   const [readiness, setReadiness] = useState<'explore_later' | 'shape_this_quarter' | 'ready_to_commit'>('shape_this_quarter')
   const [horizon, setHorizon] = useState<'near_term' | 'mid_term' | 'long_term' | ''>('')
+  const [capacityValidation, setCapacityValidation] = useState<CapacityValidationResult | null>(null)
+  const [capacityValidationBusy, setCapacityValidationBusy] = useState(false)
+  const [capacityValidationError, setCapacityValidationError] = useState('')
 
   const docMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -2687,6 +3130,11 @@ function RoadmapPage({
   const selectedPlan = selectedRoadmapItem ? planByBucketItem.get(selectedRoadmapItem.id) || null : null
   const isLocked = Boolean(selectedRoadmapItem && selectedPlan)
   const canCommit = readiness === 'ready_to_commit'
+  const hasDuration = Number.isFinite(Number(roadmapMove.tentative_duration_weeks))
+    && Number(roadmapMove.tentative_duration_weeks) > 0
+  const hasResourceFte =
+    (Number(roadmapFeFte) || 0) + (Number(roadmapBeFte) || 0) + (Number(roadmapAiFte) || 0) + (Number(roadmapPmFte) || 0) > 0
+  const capacityApproved = !capacityValidation || capacityValidation.status === 'APPROVED'
   const knownOwners = useMemo(() => {
     const owners = roadmapItems.map((item) => item.accountable_person.trim()).filter(Boolean)
     return Array.from(new Set(owners))
@@ -2728,6 +3176,57 @@ function RoadmapPage({
     else setHorizon('')
   }, [roadmapMove.pickup_period])
 
+  useEffect(() => {
+    if (!selectedRoadmapItem) {
+      setCapacityValidation(null)
+      setCapacityValidationError('')
+      return
+    }
+    const weeks = Number(roadmapMove.tentative_duration_weeks)
+    if (!Number.isFinite(weeks) || weeks <= 0) {
+      setCapacityValidation(null)
+      setCapacityValidationError('')
+      return
+    }
+    const fe = Number(roadmapFeFte) || 0
+    const be = Number(roadmapBeFte) || 0
+    const ai = Number(roadmapAiFte) || 0
+    const pm = Number(roadmapPmFte) || 0
+    if (fe + be + ai + pm <= 0) {
+      setCapacityValidation(null)
+      setCapacityValidationError('')
+      return
+    }
+    const timer = setTimeout(() => {
+      setCapacityValidationBusy(true)
+      setCapacityValidationError('')
+      validateCapacity({
+        project_context: selectedRoadmapItem.project_context,
+        tentative_duration_weeks: weeks,
+        fe_fte: Math.max(0, fe),
+        be_fte: Math.max(0, be),
+        ai_fte: Math.max(0, ai),
+        pm_fte: Math.max(0, pm),
+        exclude_bucket_item_id: selectedRoadmapItem.id,
+      })
+        .then((res) => setCapacityValidation(res))
+        .catch((err) => {
+          setCapacityValidation(null)
+          setCapacityValidationError(err instanceof Error ? err.message : 'Capacity validation failed')
+        })
+        .finally(() => setCapacityValidationBusy(false))
+    }, 280)
+    return () => clearTimeout(timer)
+  }, [
+    selectedRoadmapItem,
+    roadmapMove.tentative_duration_weeks,
+    roadmapFeFte,
+    roadmapBeFte,
+    roadmapAiFte,
+    roadmapPmFte,
+    validateCapacity,
+  ])
+
   function candidateStatus(item: RoadmapItem): 'Unshaped' | 'Ready for Commit' | 'Deferred' | 'Committed' {
     if (planByBucketItem.get(item.id)) return 'Committed'
     if (selectedRoadmapItem?.id === item.id && readiness === 'explore_later') return 'Deferred'
@@ -2747,6 +3246,38 @@ function RoadmapPage({
       return
     }
     setRoadmapMove({ tentative_duration_weeks: '', pickup_period: '', completion_period: '' })
+  }
+
+  function addRoadmapActivity() {
+    setRoadmapActivities((items) => [...items, '[BE]'])
+  }
+
+  function updateRoadmapActivity(index: number, value: string) {
+    setRoadmapActivities((items) =>
+      items.map((it, i) => {
+        if (i !== index) return it
+        const parsed = parseActivityEntry(it)
+        const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(value)]
+        return formatActivityEntry(value, tags)
+      }),
+    )
+  }
+
+  function toggleRoadmapActivityTag(index: number, tag: ActivityTag) {
+    setRoadmapActivities((items) =>
+      items.map((it, i) => {
+        if (i !== index) return it
+        const parsed = parseActivityEntry(it)
+        const has = parsed.tags.includes(tag)
+        let nextTags = has ? parsed.tags.filter((t) => t !== tag) : [...parsed.tags, tag]
+        if (nextTags.length === 0) nextTags = ['BE']
+        return formatActivityEntry(parsed.text, nextTags)
+      }),
+    )
+  }
+
+  function removeRoadmapActivity(index: number) {
+    setRoadmapActivities((items) => items.filter((_, i) => i !== index))
   }
 
   return (
@@ -2934,6 +3465,177 @@ function RoadmapPage({
               </div>
             )}
 
+            <details className="flat-detail" open>
+              <summary>Scope and activities refinement</summary>
+              <div className="activity-editor">
+                <div className="line-item">
+                  <strong>Update details before commitment</strong>
+                  {!isLocked && (
+                    <button
+                      className="ghost-btn tiny"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void saveRoadmapCandidate(selectedRoadmapItem.id)}
+                    >
+                      Save Candidate Updates
+                    </button>
+                  )}
+                </div>
+                <label>
+                  Scope
+                  <textarea
+                    rows={3}
+                    value={roadmapScope}
+                    disabled={isLocked || busy}
+                    onChange={(e) => setRoadmapScope(e.target.value)}
+                    placeholder="Refine commitment scope"
+                  />
+                </label>
+                <div className="split-4">
+                  <label>
+                    FE FTE
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={roadmapFeFte}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapFeFte(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    BE FTE
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={roadmapBeFte}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapBeFte(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    AI FTE
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={roadmapAiFte}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapAiFte(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    PM FTE
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={roadmapPmFte}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapPmFte(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                </div>
+                <div className="inline-note">
+                  <span>
+                    Capacity Validation: {capacityValidationBusy ? 'Checking...' : capacityValidation?.status || 'Not yet evaluated'}
+                  </span>
+                  {capacityValidation && (
+                    <span className={capacityValidation.status === 'APPROVED' ? 'success-text' : 'error-text'}>
+                      {capacityValidation.reason}
+                    </span>
+                  )}
+                  {capacityValidationError && <span className="error-text">{capacityValidationError}</span>}
+                </div>
+                {capacityValidation && (
+                  <CapacityMeters
+                    title="Resource Availability Meter (After This Commitment)"
+                    utilization={capacityValidation.utilization_percentage}
+                  />
+                )}
+                <div className="line-item">
+                  <strong>Activities</strong>
+                  <button
+                    className="ghost-btn tiny"
+                    type="button"
+                    disabled={isLocked || busy}
+                    onClick={addRoadmapActivity}
+                  >
+                    + Add Activity
+                  </button>
+                </div>
+                <table className="activity-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Tags</th>
+                      <th>Activity</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roadmapActivities.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="muted">
+                          No activities added yet.
+                        </td>
+                      </tr>
+                    )}
+                    {roadmapActivities.map((activity, idx) => {
+                      const parsed = parseActivityEntry(activity)
+                      return (
+                        <tr key={`${idx}-${activity}`}>
+                          <td>{idx + 1}</td>
+                          <td>
+                            <div className="activity-chip-row">
+                              {ACTIVITY_TAGS.map((tag) => {
+                                const active = parsed.tags.includes(tag)
+                                return (
+                                  <button
+                                    key={`${idx}-${tag}`}
+                                    className={`activity-tag-chip tag-${tag.toLowerCase()}${active ? ' active' : ' inactive'}`}
+                                    type="button"
+                                    disabled={isLocked || busy}
+                                    onClick={() => toggleRoadmapActivityTag(idx, tag)}
+                                  >
+                                    {tag}
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          </td>
+                          <td>
+                            <input
+                              className="activity-input"
+                              value={parsed.text}
+                              disabled={isLocked || busy}
+                              onChange={(e) => updateRoadmapActivity(idx, e.target.value)}
+                              placeholder="Enter activity"
+                            />
+                          </td>
+                          <td>
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={isLocked || busy}
+                              onClick={() => removeRoadmapActivity(idx)}
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+
             <div className="radio-rows">
               <span className="muted">Readiness</span>
               <label>
@@ -3015,6 +3717,19 @@ function RoadmapPage({
             </div>
 
             <div className="owner-row">
+              <span className="muted">Tentative Duration (weeks)</span>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={roadmapMove.tentative_duration_weeks}
+                disabled={isLocked || busy}
+                onChange={(e) => setRoadmapMove((s) => ({ ...s, tentative_duration_weeks: e.target.value }))}
+                placeholder="e.g. 8"
+              />
+            </div>
+
+            <div className="owner-row">
               <span className="muted">Owner</span>
               <input
                 list="owner-suggestions"
@@ -3034,7 +3749,7 @@ function RoadmapPage({
               <button
                 className="primary-btn commit-cta"
                 type="button"
-                disabled={busy}
+                disabled={busy || !hasDuration || !hasResourceFte || !capacityApproved}
                 onClick={async () => {
                   const ok = window.confirm(
                     'Confirm Roadmap Commitment?\n\nThis is a public commitment and will become visible on the roadmap.',
@@ -3045,6 +3760,15 @@ function RoadmapPage({
               >
                 Confirm Roadmap Commitment
               </button>
+            )}
+            {!isLocked && canCommit && !hasDuration && (
+              <p className="muted">Set tentative duration (weeks) to enable commitment confirmation.</p>
+            )}
+            {!isLocked && canCommit && hasDuration && !hasResourceFte && (
+              <p className="muted">Set FE/BE/AI/PM FTE to enable commitment confirmation.</p>
+            )}
+            {!isLocked && canCommit && hasDuration && !capacityApproved && (
+              <p className="error-text">Capacity is overallocated. Reduce FTE or duration before committing.</p>
             )}
 
             <p className="muted footer-note">
@@ -3077,6 +3801,17 @@ type RoadmapAgentProps = {
       dependency_ids: number[]
     },
   ) => Promise<void>
+  validateCapacity: (payload: {
+    project_context: string
+    tentative_duration_weeks: number
+    planned_start_date?: string
+    planned_end_date?: string
+    fe_fte: number
+    be_fte: number
+    ai_fte: number
+    pm_fte: number
+    exclude_bucket_item_id?: number
+  }) => Promise<CapacityValidationResult>
   downloadRoadmapPlanExcel: (filters: {
     year: number
     priority: string
@@ -3087,7 +3822,13 @@ type RoadmapAgentProps = {
   busy: boolean
 }
 
-function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoadmapPlanExcel, busy }: RoadmapAgentProps) {
+function RoadmapAgentPage({
+  roadmapPlanItems,
+  updateRoadmapPlanItem,
+  validateCapacity,
+  downloadRoadmapPlanExcel,
+  busy,
+}: RoadmapAgentProps) {
   const [priorityFilter, setPriorityFilter] = useState('all')
   const [contextFilter, setContextFilter] = useState('all')
   const [modeFilter, setModeFilter] = useState('all')
@@ -3095,11 +3836,12 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null)
   const [planStart, setPlanStart] = useState('')
   const [planEnd, setPlanEnd] = useState('')
-  const [planResourceCount, setPlanResourceCount] = useState('')
-  const [planEffort, setPlanEffort] = useState('')
   const [planStatus, setPlanStatus] = useState('not_started')
   const [planConfidence, setPlanConfidence] = useState('medium')
   const [planDepsText, setPlanDepsText] = useState('')
+  const [planCapacityValidation, setPlanCapacityValidation] = useState<CapacityValidationResult | null>(null)
+  const [planCapacityBusy, setPlanCapacityBusy] = useState(false)
+  const [planCapacityError, setPlanCapacityError] = useState('')
   const currentYear = new Date().getFullYear()
   const [yearView, setYearView] = useState(currentYear)
 
@@ -3141,17 +3883,95 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
     if (!selectedPlan) return
     setPlanStart(selectedPlan.planned_start_date || '')
     setPlanEnd(selectedPlan.planned_end_date || '')
-    setPlanResourceCount(selectedPlan.resource_count === null ? '' : String(selectedPlan.resource_count))
-    setPlanEffort(selectedPlan.effort_person_weeks === null ? '' : String(selectedPlan.effort_person_weeks))
     setPlanStatus(selectedPlan.planning_status || 'not_started')
     setPlanConfidence(selectedPlan.confidence || 'medium')
     setPlanDepsText((selectedPlan.dependency_ids || []).join(', '))
   }, [selectedPlan])
 
+  const computedDurationWeeks = useMemo(() => {
+    if (planStart && planEnd) {
+      const start = new Date(planStart)
+      const end = new Date(planEnd)
+      if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && end >= start) {
+        const msInDay = 24 * 60 * 60 * 1000
+        const days = Math.floor((end.getTime() - start.getTime()) / msInDay) + 1
+        return Math.max(1, Math.ceil(days / 7))
+      }
+    }
+    return selectedPlan?.tentative_duration_weeks || 1
+  }, [planStart, planEnd, selectedPlan?.tentative_duration_weeks])
+
+  const computedTotalFte = useMemo(() => {
+    if (!selectedPlan) return 0
+    return Math.max(0, selectedPlan.fe_fte || 0) + Math.max(0, selectedPlan.be_fte || 0) + Math.max(0, selectedPlan.ai_fte || 0) + Math.max(0, selectedPlan.pm_fte || 0)
+  }, [selectedPlan])
+
+  const computedResourceCount = useMemo(() => {
+    if (computedTotalFte <= 0) return 0
+    return Math.ceil(computedTotalFte)
+  }, [computedTotalFte])
+
+  const computedEffortPw = useMemo(() => {
+    if (computedTotalFte <= 0) return 0
+    return Math.ceil(computedTotalFte * computedDurationWeeks)
+  }, [computedTotalFte, computedDurationWeeks])
+
+  useEffect(() => {
+    if (!selectedPlan) {
+      setPlanCapacityValidation(null)
+      setPlanCapacityError('')
+      return
+    }
+    if (!planStart || !planEnd) {
+      setPlanCapacityValidation(null)
+      setPlanCapacityError('')
+      return
+    }
+    const start = new Date(planStart)
+    const end = new Date(planEnd)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      setPlanCapacityValidation(null)
+      setPlanCapacityError('Planned End must be on or after Planned Start.')
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setPlanCapacityBusy(true)
+      setPlanCapacityError('')
+      validateCapacity({
+        project_context: selectedPlan.project_context || 'internal',
+        tentative_duration_weeks: computedDurationWeeks,
+        planned_start_date: planStart,
+        planned_end_date: planEnd,
+        fe_fte: Math.max(0, selectedPlan.fe_fte || 0),
+        be_fte: Math.max(0, selectedPlan.be_fte || 0),
+        ai_fte: Math.max(0, selectedPlan.ai_fte || 0),
+        pm_fte: Math.max(0, selectedPlan.pm_fte || 0),
+        exclude_bucket_item_id: selectedPlan.bucket_item_id,
+      })
+        .then((res) => {
+          setPlanCapacityValidation(res)
+          setPlanCapacityError('')
+        })
+        .catch((err) => {
+          setPlanCapacityValidation(null)
+          setPlanCapacityError(err instanceof Error ? err.message : 'Capacity validation failed')
+        })
+        .finally(() => setPlanCapacityBusy(false))
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [selectedPlan, planStart, planEnd, computedDurationWeeks, validateCapacity])
+
   const yearlyPlan = useMemo(() => {
     const totalItems = filtered.length
-    const totalResources = filtered.reduce((a, i) => a + (i.resource_count || 0), 0)
-    const totalEffort = filtered.reduce((a, i) => a + (i.effort_person_weeks || 0), 0)
+    const totalResources = filtered.reduce((a, i) => {
+      const totalFte = Math.max(0, i.fe_fte || 0) + Math.max(0, i.be_fte || 0) + Math.max(0, i.ai_fte || 0) + Math.max(0, i.pm_fte || 0)
+      return a + (totalFte > 0 ? Math.ceil(totalFte) : 0)
+    }, 0)
+    const totalEffort = filtered.reduce((a, i) => {
+      const totalFte = Math.max(0, i.fe_fte || 0) + Math.max(0, i.be_fte || 0) + Math.max(0, i.ai_fte || 0) + Math.max(0, i.pm_fte || 0)
+      const dur = i.tentative_duration_weeks && i.tentative_duration_weeks > 0 ? i.tentative_duration_weeks : 1
+      return a + (totalFte > 0 ? Math.ceil(totalFte * dur) : 0)
+    }, 0)
     const atRisk = filtered.filter((i) => i.planning_status === 'at_risk').length
     return { totalItems, totalResources, totalEffort, atRisk }
   }, [filtered])
@@ -3176,6 +3996,20 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
 
   async function savePlan() {
     if (!selectedPlan) return
+    if (!planStart || !planEnd) {
+      window.alert('Planned Start and Planned End are required.')
+      return
+    }
+    const start = new Date(planStart)
+    const end = new Date(planEnd)
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      window.alert('Planned End must be on or after Planned Start.')
+      return
+    }
+    if (planCapacityValidation?.status === 'REJECTED') {
+      window.alert(planCapacityValidation.reason || 'Capacity exceeded. Please adjust dates or commitment FTE.')
+      return
+    }
     const deps = planDepsText
       .split(',')
       .map((x) => Number(x.trim()))
@@ -3183,8 +4017,8 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
     await updateRoadmapPlanItem(selectedPlan.id, {
       planned_start_date: planStart,
       planned_end_date: planEnd,
-      resource_count: planResourceCount ? Number(planResourceCount) : null,
-      effort_person_weeks: planEffort ? Number(planEffort) : null,
+      resource_count: computedResourceCount,
+      effort_person_weeks: computedEffortPw,
       planning_status: planStatus,
       confidence: planConfidence,
       dependency_ids: Array.from(new Set(deps)),
@@ -3216,7 +4050,7 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
             </svg>
           </button>
         </div>
-        <p className="muted">Plan committed items with dates, effort, resources, quarter views, and yearly roll-up.</p>
+        <p className="muted">Plan committed items with dates and dependencies. Resources and effort are auto-derived from committed FTE.</p>
         <div className="planner-filters">
           <label className="planner-filter">
             <span>Year</span>
@@ -3334,13 +4168,29 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
             <div className="split-2">
               <label>
                 Resources Required
-                <input type="number" min={0} value={planResourceCount} onChange={(e) => setPlanResourceCount(e.target.value)} />
+                <input type="number" min={0} value={computedResourceCount} readOnly />
               </label>
               <label>
                 Effort (Person-Weeks)
-                <input type="number" min={0} value={planEffort} onChange={(e) => setPlanEffort(e.target.value)} />
+                <input type="number" min={0} value={computedEffortPw} readOnly />
               </label>
             </div>
+            <div className="inline-note">
+              <span>Calculated duration: {computedDurationWeeks} week(s)</span>
+              <span>Capacity validation: {planCapacityBusy ? 'Checking...' : planCapacityValidation?.status || 'Set dates to evaluate'}</span>
+              {planCapacityValidation && (
+                <span className={planCapacityValidation.status === 'APPROVED' ? 'success-text' : 'error-text'}>
+                  {planCapacityValidation.reason}
+                </span>
+              )}
+              {planCapacityError && <span className="error-text">{planCapacityError}</span>}
+            </div>
+            {planCapacityValidation && (
+              <CapacityMeters
+                title="Resource Availability Meter (Selected Timeline)"
+                utilization={planCapacityValidation.utilization_percentage}
+              />
+            )}
             <div className="split-2">
               <label>
                 Status
@@ -3364,7 +4214,19 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
               Dependencies (comma-separated roadmap plan IDs)
               <input value={planDepsText} onChange={(e) => setPlanDepsText(e.target.value)} placeholder="e.g. 4, 8, 12" />
             </label>
-            <button className="primary-btn" type="button" disabled={busy} onClick={savePlan}>
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={
+                busy ||
+                !planStart ||
+                !planEnd ||
+                !!planCapacityError ||
+                planCapacityBusy ||
+                planCapacityValidation?.status === 'REJECTED'
+              }
+              onClick={savePlan}
+            >
               Save Plan
             </button>
           </div>
@@ -3379,6 +4241,8 @@ function RoadmapAgentPage({ roadmapPlanItems, updateRoadmapPlanItem, downloadRoa
 type SettingsProps = {
   activeConfig: LLMConfig | null
   llmConfigs: LLMConfig[]
+  governanceConfig: GovernanceConfig | null
+  currentUserRole: CurrentUser['role']
   providerForm: {
     provider: string
     model: string
@@ -3397,6 +4261,17 @@ type SettingsProps = {
   setUseCustomModel: Dispatch<SetStateAction<boolean>>
   saveLLMConfig: (e: FormEvent) => Promise<void>
   testLLMConfig: () => Promise<void>
+  saveGovernanceTeamConfig: (payload: {
+    team_fe: string
+    team_be: string
+    team_ai: string
+    team_pm: string
+    efficiency_fe: string
+    efficiency_be: string
+    efficiency_ai: string
+    efficiency_pm: string
+  }) => Promise<void>
+  saveGovernanceQuotas: (payload: { quota_client: string; quota_internal: string }) => Promise<void>
   llmTestResult: LLMTestResult | null
   busy: boolean
 }
@@ -3404,20 +4279,161 @@ type SettingsProps = {
 function SettingsPage({
   activeConfig,
   llmConfigs,
+  governanceConfig,
+  currentUserRole,
   providerForm,
   setProviderForm,
   useCustomModel,
   setUseCustomModel,
   saveLLMConfig,
   testLLMConfig,
+  saveGovernanceTeamConfig,
+  saveGovernanceQuotas,
   llmTestResult,
   busy,
 }: SettingsProps) {
   const modelOptions = providerModelMap[providerForm.provider] ?? []
   const requiresBaseUrl = ['ollama', 'openai_compatible', 'glm', 'qwen', 'vertex_gemini'].includes(providerForm.provider)
+  const canEditTeam = currentUserRole === 'CEO'
+  const canEditQuotas = currentUserRole === 'CEO' || currentUserRole === 'VP'
+  const [teamFe, setTeamFe] = useState('0')
+  const [teamBe, setTeamBe] = useState('0')
+  const [teamAi, setTeamAi] = useState('0')
+  const [teamPm, setTeamPm] = useState('0')
+  const [effFe, setEffFe] = useState('1')
+  const [effBe, setEffBe] = useState('1')
+  const [effAi, setEffAi] = useState('1')
+  const [effPm, setEffPm] = useState('1')
+  const [quotaClient, setQuotaClient] = useState('0.5')
+  const [quotaInternal, setQuotaInternal] = useState('0.5')
+
+  useEffect(() => {
+    if (!governanceConfig) return
+    setTeamFe(String(governanceConfig.team_fe))
+    setTeamBe(String(governanceConfig.team_be))
+    setTeamAi(String(governanceConfig.team_ai))
+    setTeamPm(String(governanceConfig.team_pm))
+    setEffFe(String(governanceConfig.efficiency_fe))
+    setEffBe(String(governanceConfig.efficiency_be))
+    setEffAi(String(governanceConfig.efficiency_ai))
+    setEffPm(String(governanceConfig.efficiency_pm))
+    setQuotaClient(String(governanceConfig.quota_client))
+    setQuotaInternal(String(governanceConfig.quota_internal))
+  }, [governanceConfig])
 
   return (
     <main className="page-wrap">
+      <section className="panel-card settings-section">
+        <h2>Commitment Governance</h2>
+        <p className="muted">
+          CEO configures team size and efficiency per role. VP allocates portfolio quotas. PM commitments are blocked
+          automatically if they exceed configured capacity.
+        </p>
+        <div className="split-2">
+          <div className="stack">
+            <h3>Team Capacity (CEO)</h3>
+            <div className="split-4">
+              <label>
+                FE Team Size
+                <input type="number" min={0} value={teamFe} disabled={!canEditTeam || busy} onChange={(e) => setTeamFe(e.target.value)} />
+              </label>
+              <label>
+                BE Team Size
+                <input type="number" min={0} value={teamBe} disabled={!canEditTeam || busy} onChange={(e) => setTeamBe(e.target.value)} />
+              </label>
+              <label>
+                AI Team Size
+                <input type="number" min={0} value={teamAi} disabled={!canEditTeam || busy} onChange={(e) => setTeamAi(e.target.value)} />
+              </label>
+              <label>
+                PM Team Size
+                <input type="number" min={0} value={teamPm} disabled={!canEditTeam || busy} onChange={(e) => setTeamPm(e.target.value)} />
+              </label>
+            </div>
+            <div className="split-4">
+              <label>
+                FE Efficiency
+                <input type="number" min={0} step="0.05" value={effFe} disabled={!canEditTeam || busy} onChange={(e) => setEffFe(e.target.value)} />
+              </label>
+              <label>
+                BE Efficiency
+                <input type="number" min={0} step="0.05" value={effBe} disabled={!canEditTeam || busy} onChange={(e) => setEffBe(e.target.value)} />
+              </label>
+              <label>
+                AI Efficiency
+                <input type="number" min={0} step="0.05" value={effAi} disabled={!canEditTeam || busy} onChange={(e) => setEffAi(e.target.value)} />
+              </label>
+              <label>
+                PM Efficiency
+                <input type="number" min={0} step="0.05" value={effPm} disabled={!canEditTeam || busy} onChange={(e) => setEffPm(e.target.value)} />
+              </label>
+            </div>
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={!canEditTeam || busy}
+              onClick={() =>
+                void saveGovernanceTeamConfig({
+                  team_fe: teamFe,
+                  team_be: teamBe,
+                  team_ai: teamAi,
+                  team_pm: teamPm,
+                  efficiency_fe: effFe,
+                  efficiency_be: effBe,
+                  efficiency_ai: effAi,
+                  efficiency_pm: effPm,
+                })
+              }
+            >
+              Save Team Capacity
+            </button>
+          </div>
+          <div className="stack">
+            <h3>Portfolio Quotas (VP/CEO)</h3>
+            <div className="split-2">
+              <label>
+                Client Quota (0-1)
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step="0.01"
+                  value={quotaClient}
+                  disabled={!canEditQuotas || busy}
+                  onChange={(e) => setQuotaClient(e.target.value)}
+                />
+              </label>
+              <label>
+                Internal Quota (0-1)
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step="0.01"
+                  value={quotaInternal}
+                  disabled={!canEditQuotas || busy}
+                  onChange={(e) => setQuotaInternal(e.target.value)}
+                />
+              </label>
+            </div>
+            <p className="muted">Total quota should be ≤ 1.00 across client and internal portfolios.</p>
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={!canEditQuotas || busy}
+              onClick={() =>
+                void saveGovernanceQuotas({
+                  quota_client: quotaClient,
+                  quota_internal: quotaInternal,
+                })
+              }
+            >
+              Save Portfolio Quotas
+            </button>
+          </div>
+        </div>
+      </section>
+
       <section className="panel-card">
         <h2>AI Provider Settings</h2>
         <p className="muted">
