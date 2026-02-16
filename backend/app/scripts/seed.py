@@ -7,10 +7,12 @@ from app.models.user import User
 Base.metadata.create_all(bind=engine)
 
 seed_users = [
+    ("Admin User", "admin@local.test", UserRole.ADMIN),
     ("CEO User", "ceo@local.test", UserRole.CEO),
     ("VP User", "vp@local.test", UserRole.VP),
     ("BA User", "ba@local.test", UserRole.BA),
     ("PM User", "pm@local.test", UserRole.PM),
+    ("PO User", "po@local.test", UserRole.PO),
 ]
 
 

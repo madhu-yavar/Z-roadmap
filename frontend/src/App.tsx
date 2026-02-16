@@ -178,7 +178,23 @@ type CurrentUser = {
   id: number
   full_name: string
   email: string
-  role: 'CEO' | 'VP' | 'BA' | 'PM'
+  role: 'ADMIN' | 'CEO' | 'VP' | 'BA' | 'PM' | 'PO'
+  is_active: boolean
+}
+
+type UserAdmin = {
+  id: number
+  full_name: string
+  email: string
+  role: CurrentUser['role']
+  is_active: boolean
+}
+
+type RolePolicy = {
+  role: CurrentUser['role']
+  can_create_users: boolean
+  scope: string
+  responsibilities: string[]
 }
 
 type IntakeSeedMeta = {
@@ -258,10 +274,12 @@ function getProjectTypeColor(projectContext: string, deliveryMode: string): stri
 }
 
 const rolePresets = [
+  { label: 'ADMIN', email: 'admin@local.test' },
   { label: 'CEO', email: 'ceo@local.test' },
   { label: 'VP', email: 'vp@local.test' },
   { label: 'BA', email: 'ba@local.test' },
   { label: 'PM', email: 'pm@local.test' },
+  { label: 'PO', email: 'po@local.test' },
 ]
 
 const providerModelMap: Record<string, string[]> = {
@@ -541,6 +559,8 @@ function App() {
     api_key: '',
   })
   const [governanceConfig, setGovernanceConfig] = useState<GovernanceConfig | null>(null)
+  const [users, setUsers] = useState<UserAdmin[]>([])
+  const [rolePolicies, setRolePolicies] = useState<RolePolicy[]>([])
   const [useCustomModel, setUseCustomModel] = useState(false)
   const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null)
   const [chatSupportRequest, setChatSupportRequest] = useState<{
@@ -619,7 +639,7 @@ function App() {
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
 
   async function loadData(activeToken: string) {
-    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes] =
+    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, rolePoliciesRes] =
       await Promise.allSettled([
         api<CurrentUser>('/auth/me', {}, activeToken),
         api<Dashboard>('/dashboard/summary', {}, activeToken),
@@ -630,6 +650,8 @@ function App() {
         api<RoadmapRedundancy[]>('/roadmap/items/redundancy', {}, activeToken),
         api<LLMConfig[]>('/settings/llm', {}, activeToken),
         api<GovernanceConfig>('/settings/governance', {}, activeToken),
+        api<UserAdmin[]>('/users', {}, activeToken),
+        api<RolePolicy[]>('/users/roles-matrix', {}, activeToken),
       ])
 
     if (meRes.status !== 'fulfilled') throw meRes.reason
@@ -649,6 +671,8 @@ function App() {
     )
     setLlmConfigs(cfgRes.status === 'fulfilled' ? cfgRes.value : [])
     setGovernanceConfig(governanceRes.status === 'fulfilled' ? governanceRes.value : null)
+    setUsers(usersRes.status === 'fulfilled' ? usersRes.value : [])
+    setRolePolicies(rolePoliciesRes.status === 'fulfilled' ? rolePoliciesRes.value : [])
   }
 
   async function fetchDocumentBlob(documentId: number): Promise<{ blob: Blob; contentType: string }> {
@@ -1182,6 +1206,48 @@ function App() {
     }
   }
 
+  async function downloadProjectDocument(payload: {
+    version?: string
+    prepared_by?: string
+    approved_by?: string
+    level?: 'l1' | 'l2'
+  }) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      const params = new URLSearchParams()
+      if (payload.version?.trim()) params.set('version', payload.version.trim())
+      if (payload.prepared_by?.trim()) params.set('prepared_by', payload.prepared_by.trim())
+      if (payload.approved_by?.trim()) params.set('approved_by', payload.approved_by.trim())
+      if (payload.level) params.set('level', payload.level)
+      const query = params.toString()
+      const res = await fetch(`${API_BASE}/settings/project-document/download${query ? `?${query}` : ''}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        const txt = await res.text()
+        throw new Error(txt || `Document download failed with ${res.status}`)
+      }
+      const blob = await res.blob()
+      const contentDisposition = res.headers.get('content-disposition') || ''
+      const match = contentDisposition.match(/filename=\"?([^\";]+)\"?/)
+      const filename = match?.[1] || 'resource_commitment_capacity_governance.pdf'
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Project document download failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function saveLLMConfig(e: FormEvent) {
     e.preventDefault()
     if (!token) return
@@ -1301,6 +1367,61 @@ function App() {
     }
   }
 
+  async function createPlatformUser(payload: {
+    full_name: string
+    email: string
+    password: string
+    role: CurrentUser['role']
+  }) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<UserAdmin>(
+        '/users',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'User creation failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function updatePlatformUser(
+    userId: number,
+    payload: {
+      full_name?: string
+      role?: CurrentUser['role']
+      password?: string
+      is_active?: boolean
+    },
+  ) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<UserAdmin>(
+        `/users/id/${userId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'User update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function validateCapacity(payload: {
     project_context: string
     tentative_duration_weeks: number
@@ -1334,6 +1455,8 @@ function App() {
     setRoadmapPlanItems([])
     setLlmConfigs([])
     setGovernanceConfig(null)
+    setUsers([])
+    setRolePolicies([])
     setIntakeHistory([])
     setSelectedAnalysis(null)
     setSelectedRoadmapIds([])
@@ -1565,6 +1688,8 @@ function App() {
               activeConfig={activeConfig || null}
               llmConfigs={llmConfigs}
               governanceConfig={governanceConfig}
+              users={users}
+              rolePolicies={rolePolicies}
               currentUserRole={currentUser?.role || 'PM'}
               providerForm={providerForm}
               setProviderForm={setProviderForm}
@@ -1574,6 +1699,9 @@ function App() {
               testLLMConfig={testLLMConfig}
               saveGovernanceTeamConfig={saveGovernanceTeamConfig}
               saveGovernanceQuotas={saveGovernanceQuotas}
+              createPlatformUser={createPlatformUser}
+              updatePlatformUser={updatePlatformUser}
+              downloadProjectDocument={downloadProjectDocument}
               llmTestResult={llmTestResult}
               busy={busy}
             />
@@ -4242,6 +4370,8 @@ type SettingsProps = {
   activeConfig: LLMConfig | null
   llmConfigs: LLMConfig[]
   governanceConfig: GovernanceConfig | null
+  users: UserAdmin[]
+  rolePolicies: RolePolicy[]
   currentUserRole: CurrentUser['role']
   providerForm: {
     provider: string
@@ -4272,6 +4402,27 @@ type SettingsProps = {
     efficiency_pm: string
   }) => Promise<void>
   saveGovernanceQuotas: (payload: { quota_client: string; quota_internal: string }) => Promise<void>
+  createPlatformUser: (payload: {
+    full_name: string
+    email: string
+    password: string
+    role: CurrentUser['role']
+  }) => Promise<void>
+  updatePlatformUser: (
+    userId: number,
+    payload: {
+      full_name?: string
+      role?: CurrentUser['role']
+      password?: string
+      is_active?: boolean
+    },
+  ) => Promise<void>
+  downloadProjectDocument: (payload: {
+    version?: string
+    prepared_by?: string
+    approved_by?: string
+    level?: 'l1' | 'l2'
+  }) => Promise<void>
   llmTestResult: LLMTestResult | null
   busy: boolean
 }
@@ -4280,6 +4431,8 @@ function SettingsPage({
   activeConfig,
   llmConfigs,
   governanceConfig,
+  users,
+  rolePolicies,
   currentUserRole,
   providerForm,
   setProviderForm,
@@ -4289,6 +4442,9 @@ function SettingsPage({
   testLLMConfig,
   saveGovernanceTeamConfig,
   saveGovernanceQuotas,
+  createPlatformUser,
+  updatePlatformUser,
+  downloadProjectDocument,
   llmTestResult,
   busy,
 }: SettingsProps) {
@@ -4296,6 +4452,7 @@ function SettingsPage({
   const requiresBaseUrl = ['ollama', 'openai_compatible', 'glm', 'qwen', 'vertex_gemini'].includes(providerForm.provider)
   const canEditTeam = currentUserRole === 'CEO'
   const canEditQuotas = currentUserRole === 'CEO' || currentUserRole === 'VP'
+  const isAdmin = currentUserRole === 'ADMIN'
   const [teamFe, setTeamFe] = useState('0')
   const [teamBe, setTeamBe] = useState('0')
   const [teamAi, setTeamAi] = useState('0')
@@ -4306,6 +4463,14 @@ function SettingsPage({
   const [effPm, setEffPm] = useState('1')
   const [quotaClient, setQuotaClient] = useState('0.5')
   const [quotaInternal, setQuotaInternal] = useState('0.5')
+  const [newUserName, setNewUserName] = useState('')
+  const [newUserEmail, setNewUserEmail] = useState('')
+  const [newUserPassword, setNewUserPassword] = useState('')
+  const [newUserRole, setNewUserRole] = useState<CurrentUser['role']>('CEO')
+  const [docVersion, setDocVersion] = useState('1.0')
+  const [docApprovedBy, setDocApprovedBy] = useState('CEO')
+  const [docLevel, setDocLevel] = useState<'l1' | 'l2'>('l1')
+  const [resetPasswords, setResetPasswords] = useState<Record<number, string>>({})
 
   useEffect(() => {
     if (!governanceConfig) return
@@ -4433,6 +4598,213 @@ function SettingsPage({
           </div>
         </div>
       </section>
+
+      <section className="panel-card settings-section">
+        <h2>Roles, Rights, Responsibilities</h2>
+        <p className="muted">Role scope and responsibilities are enforced by backend RBAC checks.</p>
+        {rolePolicies.length === 0 ? (
+          <p className="muted">No role policy data available.</p>
+        ) : (
+          <table className="docs-table">
+            <thead>
+              <tr>
+                <th>Role</th>
+                <th>User Mgmt</th>
+                <th>Scope</th>
+                <th>Responsibilities</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rolePolicies.map((policy) => (
+                <tr key={policy.role}>
+                  <td>{policy.role}</td>
+                  <td>{policy.can_create_users ? 'Yes' : 'No'}</td>
+                  <td>{policy.scope}</td>
+                  <td>{policy.responsibilities.join(' | ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {isAdmin && (
+        <section className="panel-card settings-section">
+          <h2>User Access Management (Admin)</h2>
+          <p className="muted">Admin creates and maintains CEO, VP, BA, PM, and PO user accounts.</p>
+          <div className="stack">
+            <div className="split-4">
+              <label>
+                Full Name
+                <input value={newUserName} disabled={busy} onChange={(e) => setNewUserName(e.target.value)} placeholder="Jane Doe" />
+              </label>
+              <label>
+                Email
+                <input value={newUserEmail} disabled={busy} onChange={(e) => setNewUserEmail(e.target.value)} placeholder="jane@company.com" />
+              </label>
+              <label>
+                Role
+                <select value={newUserRole} disabled={busy} onChange={(e) => setNewUserRole(e.target.value as CurrentUser['role'])}>
+                  <option value="CEO">CEO</option>
+                  <option value="VP">VP</option>
+                  <option value="BA">BA</option>
+                  <option value="PM">PM</option>
+                  <option value="PO">PO</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+              </label>
+              <label>
+                Temporary Password
+                <input
+                  type="password"
+                  value={newUserPassword}
+                  disabled={busy}
+                  onChange={(e) => setNewUserPassword(e.target.value)}
+                  placeholder="min 8 chars"
+                />
+              </label>
+            </div>
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={busy || !newUserName.trim() || !newUserEmail.trim() || newUserPassword.length < 8}
+              onClick={async () => {
+                await createPlatformUser({
+                  full_name: newUserName.trim(),
+                  email: newUserEmail.trim().toLowerCase(),
+                  password: newUserPassword,
+                  role: newUserRole,
+                })
+                setNewUserName('')
+                setNewUserEmail('')
+                setNewUserPassword('')
+                setNewUserRole('CEO')
+              }}
+            >
+              Create User
+            </button>
+          </div>
+          <table className="docs-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Password Reset</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    No users found.
+                  </td>
+                </tr>
+              )}
+              {users.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.id}</td>
+                  <td>{u.full_name}</td>
+                  <td>{u.email}</td>
+                  <td>
+                    <select
+                      value={u.role}
+                      disabled={busy}
+                      onChange={(e) => void updatePlatformUser(u.id, { role: e.target.value as CurrentUser['role'] })}
+                    >
+                      <option value="ADMIN">ADMIN</option>
+                      <option value="CEO">CEO</option>
+                      <option value="VP">VP</option>
+                      <option value="BA">BA</option>
+                      <option value="PM">PM</option>
+                      <option value="PO">PO</option>
+                    </select>
+                  </td>
+                  <td>
+                    <label className="inline-check">
+                      <input
+                        type="checkbox"
+                        checked={u.is_active}
+                        disabled={busy}
+                        onChange={(e) => void updatePlatformUser(u.id, { is_active: e.target.checked })}
+                      />
+                      <span>{u.is_active ? 'Active' : 'Inactive'}</span>
+                    </label>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <input
+                        type="password"
+                        placeholder="new password"
+                        value={resetPasswords[u.id] || ''}
+                        disabled={busy}
+                        onChange={(e) => setResetPasswords((s) => ({ ...s, [u.id]: e.target.value }))}
+                      />
+                      <button
+                        className="ghost-btn tiny"
+                        type="button"
+                        disabled={busy || (resetPasswords[u.id] || '').length < 8}
+                        onClick={async () => {
+                          const pwd = (resetPasswords[u.id] || '').trim()
+                          if (pwd.length < 8) return
+                          await updatePlatformUser(u.id, { password: pwd })
+                          setResetPasswords((s) => ({ ...s, [u.id]: '' }))
+                        }}
+                      >
+                        Reset
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="panel-card settings-section">
+          <h2>Project Governance Document (Admin)</h2>
+          <p className="muted">
+            Download the ISO-style Resource Commitment & Capacity Governance document as a PDF generated from current system settings.
+          </p>
+          <div className="split-2">
+            <label>
+              Version
+              <input value={docVersion} disabled={busy} onChange={(e) => setDocVersion(e.target.value)} placeholder="1.0" />
+            </label>
+            <label>
+              Approved By
+              <input value={docApprovedBy} disabled={busy} onChange={(e) => setDocApprovedBy(e.target.value)} placeholder="CEO" />
+            </label>
+          </div>
+          <div className="split-2">
+            <label>
+              Document Level
+              <select value={docLevel} disabled={busy} onChange={(e) => setDocLevel(e.target.value as 'l1' | 'l2')}>
+                <option value="l1">L1 - Governance Specification</option>
+                <option value="l2">L2 - Governance Doctrine (Board)</option>
+              </select>
+            </label>
+          </div>
+          <button
+            className="primary-btn"
+            type="button"
+            disabled={busy}
+            onClick={() =>
+              void downloadProjectDocument({
+                version: docVersion,
+                approved_by: docApprovedBy,
+                level: docLevel,
+              })
+            }
+          >
+            Download {docLevel.toUpperCase()} Document (PDF)
+          </button>
+        </section>
+      )}
 
       <section className="panel-card">
         <h2>AI Provider Settings</h2>

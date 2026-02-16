@@ -35,6 +35,9 @@ services:
       GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
       GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/service-account.json}
+      ADMIN_BOOTSTRAP_NAME: ${ADMIN_BOOTSTRAP_NAME:-Platform Admin}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
     volumes:
       - backend_uploads:/app/storage/uploads
       - ./secrets:/run/secrets:ro

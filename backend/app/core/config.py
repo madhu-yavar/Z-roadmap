@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     GOOGLE_CLOUD_PROJECT: str = ""
     GOOGLE_CLOUD_LOCATION: str = ""
     GOOGLE_APPLICATION_CREDENTIALS: str = ""
+    ADMIN_BOOTSTRAP_NAME: str = "Platform Admin"
+    ADMIN_BOOTSTRAP_EMAIL: str = ""
+    ADMIN_BOOTSTRAP_PASSWORD: str = ""
 
 
 settings = Settings()

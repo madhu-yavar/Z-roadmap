@@ -2,10 +2,12 @@ from enum import StrEnum
 
 
 class UserRole(StrEnum):
+    ADMIN = "ADMIN"
     CEO = "CEO"
     VP = "VP"
     BA = "BA"
     PM = "PM"
+    PO = "PO"
 
 
 class ProjectType(StrEnum):

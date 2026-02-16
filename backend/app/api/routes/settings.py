@@ -1,4 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+import re
+from datetime import date
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_roles
@@ -16,6 +21,11 @@ from app.schemas.settings import (
     LLMTestOut,
 )
 from app.services.llm_client import test_llm_connection
+from app.services.project_document_builder import (
+    generate_enterprise_project_document,
+    generate_master_governance_doctrine,
+    render_project_document_pdf,
+)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -29,6 +39,11 @@ def _get_or_create_governance(db: Session) -> GovernanceConfig:
     db.commit()
     db.refresh(cfg)
     return cfg
+
+
+def _safe_filename_part(value: str) -> str:
+    cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", (value or "").strip())
+    return cleaned.strip("-") or "1.0"
 
 
 @router.get("/llm", response_model=list[LLMConfigOut])
@@ -133,3 +148,50 @@ def update_governance_quotas(
     db.commit()
     db.refresh(cfg)
     return cfg
+
+
+@router.get("/project-document/download")
+def download_project_document(
+    prepared_by: str | None = Query(default=None, max_length=160),
+    approved_by: str | None = Query(default=None, max_length=160),
+    version: str = Query(default="1.0", max_length=40),
+    level: Literal["l1", "l2"] = Query(default="l1"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
+):
+    cfg = _get_or_create_governance(db)
+    prepared = (prepared_by or "").strip() or (current_user.full_name or current_user.email)
+    approved = (approved_by or "").strip() or "CEO (Pending Approval)"
+    doc_version = version.strip() or "1.0"
+    today = date.today()
+    if level == "l2":
+        content = generate_master_governance_doctrine(
+            prepared_by=prepared,
+            approved_by=approved,
+            effective_date=today,
+            cfg=cfg,
+            version=doc_version,
+        )
+        title = "Enterprise Capacity Governance Doctrine (L2)"
+        subtitle = "Deterministic Resource Commitment and Capacity Governance Charter"
+        filename_base = "enterprise_capacity_governance_doctrine"
+    else:
+        content = generate_enterprise_project_document(
+            prepared_by=prepared,
+            approved_by=approved,
+            effective_date=today,
+            cfg=cfg,
+            version=doc_version,
+        )
+        title = "Resource Commitment and Capacity Governance Specification (L1)"
+        subtitle = "Controlled Enterprise Project Governance Document"
+        filename_base = "resource_commitment_capacity_governance"
+
+    pdf_bytes = render_project_document_pdf(content, title=title, subtitle=subtitle)
+    version_part = _safe_filename_part(doc_version)
+    filename = f"{filename_base}_v{version_part}_{today.isoformat()}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
