@@ -131,6 +131,10 @@ type GovernanceConfig = {
   efficiency_pm: number
   quota_client: number
   quota_internal: number
+  team_locked_until: string | null
+  team_locked_by: number | null
+  quota_locked_until: string | null
+  quota_locked_by: number | null
 }
 
 type CapacityValidationResult = {
@@ -265,6 +269,8 @@ type RoadmapPlanItem = {
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000'
+const EFFICIENCY_MIN = 0.1
+const EFFICIENCY_MAX = 1.0
 
 // Helper function to get project type color for Gantt bars
 function getProjectTypeColor(projectContext: string, deliveryMode: string): string {
@@ -335,6 +341,13 @@ function fmtDate(value: string): string {
   } catch {
     return value
   }
+}
+
+function fmtDuration(ms: number): string {
+  const totalMinutes = Math.max(0, Math.floor(ms / 60000))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return `${hours}h ${String(minutes).padStart(2, '0')}m`
 }
 
 function parsePercent(value: string | undefined): number {
@@ -1313,8 +1326,18 @@ function App() {
     efficiency_pm: string
   }) {
     if (!token) return
+    const effFe = Math.max(0, toNumberOrZero(payload.efficiency_fe))
+    const effBe = Math.max(0, toNumberOrZero(payload.efficiency_be))
+    const effAi = Math.max(0, toNumberOrZero(payload.efficiency_ai))
+    const effPm = Math.max(0, toNumberOrZero(payload.efficiency_pm))
+    const minEff = Math.min(effFe, effBe, effAi, effPm)
+    const maxEff = Math.max(effFe, effBe, effAi, effPm)
+    if (minEff < EFFICIENCY_MIN || maxEff > EFFICIENCY_MAX) {
+      setError(`Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}.`)
+      return
+    }
     const proceed = window.confirm(
-      'Warning: This will update and lock Team Capacity/Efficiency values used for capacity validation across commitments and roadmap planning. Continue?',
+      'CEO acknowledgement required: saving Team Capacity/Efficiency will lock these values for 3 hours for governance consistency. Continue?',
     )
     if (!proceed) return
     setBusy(true)
@@ -1329,10 +1352,10 @@ function App() {
             team_be: Math.max(0, Math.round(toNumberOrZero(payload.team_be))),
             team_ai: Math.max(0, Math.round(toNumberOrZero(payload.team_ai))),
             team_pm: Math.max(0, Math.round(toNumberOrZero(payload.team_pm))),
-            efficiency_fe: Math.max(0, toNumberOrZero(payload.efficiency_fe)),
-            efficiency_be: Math.max(0, toNumberOrZero(payload.efficiency_be)),
-            efficiency_ai: Math.max(0, toNumberOrZero(payload.efficiency_ai)),
-            efficiency_pm: Math.max(0, toNumberOrZero(payload.efficiency_pm)),
+            efficiency_fe: effFe,
+            efficiency_be: effBe,
+            efficiency_ai: effAi,
+            efficiency_pm: effPm,
           }),
         },
         token,
@@ -1354,6 +1377,10 @@ function App() {
       setError('Invalid quota allocation: Client + Internal must be less than or equal to 1.00.')
       return
     }
+    const proceed = window.confirm(
+      'VP/CEO acknowledgement required: saving Portfolio Quotas will lock quota values for 3 hours. Continue?',
+    )
+    if (!proceed) return
     setBusy(true)
     setError('')
     try {
@@ -4481,10 +4508,15 @@ function SettingsPage({
   const [docApprovedBy, setDocApprovedBy] = useState('CEO')
   const [docLevel, setDocLevel] = useState<'l1' | 'l2'>('l1')
   const [resetPasswords, setResetPasswords] = useState<Record<number, string>>({})
+  const [nowMs, setNowMs] = useState(Date.now())
   const quotaClientNum = Number(quotaClient)
   const quotaInternalNum = Number(quotaInternal)
   const quotaTotal = (Number.isFinite(quotaClientNum) ? quotaClientNum : 0) + (Number.isFinite(quotaInternalNum) ? quotaInternalNum : 0)
   const quotaTotalInvalid = quotaTotal > 1.0 + 1e-9
+  const teamLockedUntilMs = governanceConfig?.team_locked_until ? new Date(governanceConfig.team_locked_until).getTime() : 0
+  const quotaLockedUntilMs = governanceConfig?.quota_locked_until ? new Date(governanceConfig.quota_locked_until).getTime() : 0
+  const isTeamLockActive = Number.isFinite(teamLockedUntilMs) && teamLockedUntilMs > nowMs
+  const isQuotaLockActive = Number.isFinite(quotaLockedUntilMs) && quotaLockedUntilMs > nowMs
 
   useEffect(() => {
     if (!governanceConfig) return
@@ -4500,6 +4532,11 @@ function SettingsPage({
     setQuotaInternal(String(governanceConfig.quota_internal))
   }, [governanceConfig])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 30000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   return (
     <main className="page-wrap">
       <section className="panel-card settings-section">
@@ -4514,43 +4551,82 @@ function SettingsPage({
             <div className="split-4">
               <label>
                 FE Team Size
-                <input type="number" min={0} value={teamFe} disabled={!canEditTeam || busy} onChange={(e) => setTeamFe(e.target.value)} />
+                <input type="number" min={0} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} />
               </label>
               <label>
                 BE Team Size
-                <input type="number" min={0} value={teamBe} disabled={!canEditTeam || busy} onChange={(e) => setTeamBe(e.target.value)} />
+                <input type="number" min={0} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} />
               </label>
               <label>
                 AI Team Size
-                <input type="number" min={0} value={teamAi} disabled={!canEditTeam || busy} onChange={(e) => setTeamAi(e.target.value)} />
+                <input type="number" min={0} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} />
               </label>
               <label>
                 PM Team Size
-                <input type="number" min={0} value={teamPm} disabled={!canEditTeam || busy} onChange={(e) => setTeamPm(e.target.value)} />
+                <input type="number" min={0} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} />
               </label>
             </div>
             <div className="split-4">
               <label>
                 FE Efficiency
-                <input type="number" min={0} step="0.05" value={effFe} disabled={!canEditTeam || busy} onChange={(e) => setEffFe(e.target.value)} />
+                <input
+                  type="number"
+                  min={EFFICIENCY_MIN}
+                  max={EFFICIENCY_MAX}
+                  step="0.05"
+                  value={effFe}
+                  disabled={!canEditTeam || busy || isTeamLockActive}
+                  onChange={(e) => setEffFe(e.target.value)}
+                />
               </label>
               <label>
                 BE Efficiency
-                <input type="number" min={0} step="0.05" value={effBe} disabled={!canEditTeam || busy} onChange={(e) => setEffBe(e.target.value)} />
+                <input
+                  type="number"
+                  min={EFFICIENCY_MIN}
+                  max={EFFICIENCY_MAX}
+                  step="0.05"
+                  value={effBe}
+                  disabled={!canEditTeam || busy || isTeamLockActive}
+                  onChange={(e) => setEffBe(e.target.value)}
+                />
               </label>
               <label>
                 AI Efficiency
-                <input type="number" min={0} step="0.05" value={effAi} disabled={!canEditTeam || busy} onChange={(e) => setEffAi(e.target.value)} />
+                <input
+                  type="number"
+                  min={EFFICIENCY_MIN}
+                  max={EFFICIENCY_MAX}
+                  step="0.05"
+                  value={effAi}
+                  disabled={!canEditTeam || busy || isTeamLockActive}
+                  onChange={(e) => setEffAi(e.target.value)}
+                />
               </label>
               <label>
                 PM Efficiency
-                <input type="number" min={0} step="0.05" value={effPm} disabled={!canEditTeam || busy} onChange={(e) => setEffPm(e.target.value)} />
+                <input
+                  type="number"
+                  min={EFFICIENCY_MIN}
+                  max={EFFICIENCY_MAX}
+                  step="0.05"
+                  value={effPm}
+                  disabled={!canEditTeam || busy || isTeamLockActive}
+                  onChange={(e) => setEffPm(e.target.value)}
+                />
               </label>
             </div>
+            <p className="muted">Efficiency range: {EFFICIENCY_MIN.toFixed(2)} to {EFFICIENCY_MAX.toFixed(2)}</p>
+            {isTeamLockActive && (
+              <p className="error-text">
+                Team capacity is locked until {fmtDateTime(governanceConfig?.team_locked_until || '')}
+                {' '}({fmtDuration(teamLockedUntilMs - nowMs)} remaining).
+              </p>
+            )}
             <button
               className="primary-btn"
               type="button"
-              disabled={!canEditTeam || busy}
+              disabled={!canEditTeam || busy || isTeamLockActive}
               onClick={() =>
                 void saveGovernanceTeamConfig({
                   team_fe: teamFe,
@@ -4578,7 +4654,7 @@ function SettingsPage({
                   max={1}
                   step="0.01"
                   value={quotaClient}
-                  disabled={!canEditQuotas || busy}
+                  disabled={!canEditQuotas || busy || isQuotaLockActive}
                   onChange={(e) => setQuotaClient(e.target.value)}
                 />
               </label>
@@ -4590,7 +4666,7 @@ function SettingsPage({
                   max={1}
                   step="0.01"
                   value={quotaInternal}
-                  disabled={!canEditQuotas || busy}
+                  disabled={!canEditQuotas || busy || isQuotaLockActive}
                   onChange={(e) => setQuotaInternal(e.target.value)}
                 />
               </label>
@@ -4598,10 +4674,16 @@ function SettingsPage({
             <p className={quotaTotalInvalid ? 'error-text' : 'muted'}>
               Total quota should be ≤ 1.00 across client and internal portfolios. Current total: {quotaTotal.toFixed(2)}
             </p>
+            {isQuotaLockActive && (
+              <p className="error-text">
+                Portfolio quotas are locked until {fmtDateTime(governanceConfig?.quota_locked_until || '')}
+                {' '}({fmtDuration(quotaLockedUntilMs - nowMs)} remaining).
+              </p>
+            )}
             <button
               className="primary-btn"
               type="button"
-              disabled={!canEditQuotas || busy || quotaTotalInvalid}
+              disabled={!canEditQuotas || busy || quotaTotalInvalid || isQuotaLockActive}
               onClick={() =>
                 void saveGovernanceQuotas({
                   quota_client: quotaClient,

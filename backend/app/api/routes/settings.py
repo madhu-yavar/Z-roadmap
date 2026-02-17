@@ -1,5 +1,5 @@
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,6 +29,10 @@ from app.services.project_document_builder import (
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
+EFFICIENCY_MIN = 0.1
+EFFICIENCY_MAX = 1.0
+LOCK_WINDOW_HOURS = 3
+
 
 def _get_or_create_governance(db: Session) -> GovernanceConfig:
     cfg = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
@@ -44,6 +48,10 @@ def _get_or_create_governance(db: Session) -> GovernanceConfig:
 def _safe_filename_part(value: str) -> str:
     cleaned = re.sub(r"[^a-zA-Z0-9._-]+", "-", (value or "").strip())
     return cleaned.strip("-") or "1.0"
+
+
+def _is_locked(locked_until: datetime | None) -> bool:
+    return bool(locked_until and locked_until > datetime.utcnow())
 
 
 @router.get("/llm", response_model=list[LLMConfigOut])
@@ -108,12 +116,25 @@ def update_governance_team_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO)),
 ):
+    cfg = _get_or_create_governance(db)
+    if _is_locked(cfg.team_locked_until):
+        raise HTTPException(
+            status_code=423,
+            detail=f"Team capacity is locked until {cfg.team_locked_until.isoformat()}",
+        )
     if min(payload.team_fe, payload.team_be, payload.team_ai, payload.team_pm) < 0:
         raise HTTPException(status_code=400, detail="Team size cannot be negative")
-    if min(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm) < 0:
-        raise HTTPException(status_code=400, detail="Efficiency cannot be negative")
+    if min(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm) < EFFICIENCY_MIN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Efficiency must be between {EFFICIENCY_MIN:.2f} and {EFFICIENCY_MAX:.2f}",
+        )
+    if max(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm) > EFFICIENCY_MAX:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Efficiency must be between {EFFICIENCY_MIN:.2f} and {EFFICIENCY_MAX:.2f}",
+        )
 
-    cfg = _get_or_create_governance(db)
     cfg.team_fe = payload.team_fe
     cfg.team_be = payload.team_be
     cfg.team_ai = payload.team_ai
@@ -122,6 +143,8 @@ def update_governance_team_config(
     cfg.efficiency_be = payload.efficiency_be
     cfg.efficiency_ai = payload.efficiency_ai
     cfg.efficiency_pm = payload.efficiency_pm
+    cfg.team_locked_until = datetime.utcnow() + timedelta(hours=LOCK_WINDOW_HOURS)
+    cfg.team_locked_by = current_user.id
     cfg.updated_by = current_user.id
     db.add(cfg)
     db.commit()
@@ -135,14 +158,21 @@ def update_governance_quotas(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
 ):
+    cfg = _get_or_create_governance(db)
+    if _is_locked(cfg.quota_locked_until):
+        raise HTTPException(
+            status_code=423,
+            detail=f"Portfolio quotas are locked until {cfg.quota_locked_until.isoformat()}",
+        )
     if payload.quota_client < 0 or payload.quota_internal < 0:
         raise HTTPException(status_code=400, detail="Quota cannot be negative")
     if payload.quota_client + payload.quota_internal > 1.0 + 1e-9:
         raise HTTPException(status_code=400, detail="Portfolio quotas cannot exceed 1.0 combined")
 
-    cfg = _get_or_create_governance(db)
     cfg.quota_client = payload.quota_client
     cfg.quota_internal = payload.quota_internal
+    cfg.quota_locked_until = datetime.utcnow() + timedelta(hours=LOCK_WINDOW_HOURS)
+    cfg.quota_locked_by = current_user.id
     cfg.updated_by = current_user.id
     db.add(cfg)
     db.commit()

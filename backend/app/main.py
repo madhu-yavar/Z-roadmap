@@ -96,12 +96,20 @@ def _ensure_compat_columns() -> None:
             efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0,
             quota_client DOUBLE PRECISION NOT NULL DEFAULT 0.5,
             quota_internal DOUBLE PRECISION NOT NULL DEFAULT 0.5,
+            team_locked_until TIMESTAMP,
+            team_locked_by INTEGER REFERENCES users(id),
+            quota_locked_until TIMESTAMP,
+            quota_locked_by INTEGER REFERENCES users(id),
             updated_by INTEGER REFERENCES users(id),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         """,
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_pm INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_until TIMESTAMP",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_by INTEGER",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS quota_locked_until TIMESTAMP",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS quota_locked_by INTEGER",
     ]
     with engine.begin() as conn:
         for stmt in statements:

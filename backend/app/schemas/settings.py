@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -37,6 +39,10 @@ class GovernanceOut(BaseModel):
     efficiency_pm: float
     quota_client: float
     quota_internal: float
+    team_locked_until: datetime | None = None
+    team_locked_by: int | None = None
+    quota_locked_until: datetime | None = None
+    quota_locked_by: int | None = None
 
     model_config = {"from_attributes": True}
 
