@@ -20,7 +20,7 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     projects = relationship("Project", back_populates="owner")
-    custom_role = relationship("CustomRole")
+    custom_role = relationship("CustomRole", foreign_keys=[custom_role_id])
 
     @property
     def custom_role_name(self) -> str | None:
