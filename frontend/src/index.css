@@ -464,6 +464,114 @@ p {
   border-bottom: 1px solid var(--line);
 }
 
+.dashboard-minimal {
+  background: #f7f8fb;
+}
+
+.dashboard-minimal .stats-row {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.dashboard-minimal .metric-card {
+  border: 1px solid #e6e9ef;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
+  min-height: 82px;
+  box-shadow: none;
+  transition: none;
+}
+
+.dashboard-minimal .metric-card:hover {
+  box-shadow: none;
+  border-color: #e6e9ef;
+  transform: none;
+}
+
+.dashboard-minimal .metric-card p {
+  font-size: 0.74rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.dashboard-minimal .metric-card h2 {
+  margin-top: 8px;
+  font-size: 1.55rem;
+  font-weight: 650;
+  color: #111827;
+}
+
+.dashboard-minimal .card-grid {
+  gap: 10px;
+}
+
+.dashboard-minimal .panel-card {
+  border: 1px solid #e6e9ef;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px;
+  gap: 12px;
+  box-shadow: none;
+  transition: none;
+}
+
+.dashboard-minimal .panel-card:hover {
+  box-shadow: none;
+}
+
+.dashboard-minimal .panel-card h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #1f2937;
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.dashboard-minimal .line-item {
+  padding: 8px 0;
+  border-bottom: 1px dashed #edf1f6;
+}
+
+.dashboard-minimal .line-item:hover {
+  background: transparent;
+  margin: 0;
+  padding: 8px 0;
+  border-radius: 0;
+}
+
+.dashboard-minimal .line-item:last-child {
+  border-bottom: 0;
+}
+
+.dashboard-minimal .chart-wrap {
+  margin-top: 0;
+  height: 220px;
+}
+
+.dashboard-minimal .capacity-meter-card {
+  border-color: #e8ebf2;
+  box-shadow: none;
+}
+
+.dashboard-minimal .capacity-meter-track {
+  background: #eef2f7;
+}
+
+.dashboard-minimal .capacity-meter-fill.ok {
+  background: #6b7280;
+}
+
+.dashboard-minimal .capacity-meter-fill.warn {
+  background: #d97706;
+}
+
+.dashboard-minimal .capacity-meter-fill.error {
+  background: #dc2626;
+}
+
 /* ========== Intake Queue Redesign ========== */
 .intake-queue-card {
   min-height: 400px;
@@ -2586,6 +2694,10 @@ button.activity-tag-chip:hover {
   .card-grid.two {
     grid-template-columns: 1fr;
   }
+
+  .dashboard-minimal .stats-row {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1180px) {
@@ -2667,6 +2779,10 @@ button.activity-tag-chip:hover {
     gap: 12px;
   }
 
+  .dashboard-minimal .stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .metric-card {
     padding: 16px;
     min-height: 90px;
@@ -2707,6 +2823,10 @@ button.activity-tag-chip:hover {
 
 @media (max-width: 640px) {
   .stats-row {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-minimal .stats-row {
     grid-template-columns: 1fr;
   }
 

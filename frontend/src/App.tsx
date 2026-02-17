@@ -2756,6 +2756,10 @@ type DashboardProps = {
 function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: DashboardProps) {
   const count = (m: Record<string, number> | undefined, key: string) => Number(m?.[key] || 0)
   const today = useMemo(() => new Date(), [])
+  const chartGridStroke = '#edf1f6'
+  const chartColorPrimary = '#4b5563'
+  const chartColorSecondary = '#cbd5e1'
+  const chartColorMuted = '#9ca3af'
   const capacitySnapshot = useMemo(() => {
     const usage = {
       client: emptyRoleTotals(),
@@ -2850,7 +2854,7 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
   const capacityWarning = capacityAlert?.role_alerts.filter((r) => r.status === 'WARNING') || []
 
   return (
-    <main className="page-wrap">
+    <main className="page-wrap dashboard-minimal">
       <section className="stats-row">
         <article className="metric-card">
           <p>Intake Queue</p>
@@ -2980,11 +2984,11 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={stageData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eceaf5" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
                 <XAxis dataKey="stage" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="count" fill="#7c3aed" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="count" fill={chartColorPrimary} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -2995,12 +2999,12 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={contextData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eceaf5" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
                 <XAxis dataKey="stage" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="client" fill="#7c3aed" />
-                <Bar dataKey="internal" fill="#c4b5fd" />
+                <Bar dataKey="client" fill={chartColorPrimary} />
+                <Bar dataKey="internal" fill={chartColorSecondary} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -3013,12 +3017,12 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={modeData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eceaf5" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
                 <XAxis dataKey="stage" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="standard" fill="#7c3aed" />
-                <Bar dataKey="rnd" fill="#f59e0b" />
+                <Bar dataKey="standard" fill={chartColorPrimary} />
+                <Bar dataKey="rnd" fill={chartColorMuted} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -3028,12 +3032,12 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
           <div className="chart-wrap">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={priorityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eceaf5" />
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
                 <XAxis dataKey="priority" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="commitments" fill="#7c3aed" />
-                <Bar dataKey="roadmap" fill="#c4b5fd" />
+                <Bar dataKey="commitments" fill={chartColorPrimary} />
+                <Bar dataKey="roadmap" fill={chartColorSecondary} />
               </BarChart>
             </ResponsiveContainer>
           </div>
