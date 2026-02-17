@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -6,7 +8,7 @@ from app.core.security import create_access_token, get_password_hash, verify_pas
 from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.user import User
-from app.schemas.auth import LoginInput, TokenOut
+from app.schemas.auth import ChangePasswordInput, ChangePasswordOut, LoginInput, TokenOut
 from app.schemas.user import UserCreate, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -42,6 +44,8 @@ def register(
         email=payload.email.lower(),
         password_hash=get_password_hash(payload.password),
         role=payload.role,
+        force_password_change=user_count > 0,
+        password_changed_at=None if user_count > 0 else datetime.utcnow(),
         is_active=True,
     )
     db.add(user)
@@ -64,3 +68,22 @@ def login(payload: LoginInput, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.post("/change-password", response_model=ChangePasswordOut)
+def change_password(
+    payload: ChangePasswordInput,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=400, detail="New password must be different from current password")
+
+    current_user.password_hash = get_password_hash(payload.new_password)
+    current_user.force_password_change = False
+    current_user.password_changed_at = datetime.utcnow()
+    db.add(current_user)
+    db.commit()
+    return ChangePasswordOut()

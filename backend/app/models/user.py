@@ -17,6 +17,8 @@ class User(Base):
     role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
     custom_role_id: Mapped[int | None] = mapped_column(ForeignKey("custom_roles.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    force_password_change: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    password_changed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     projects = relationship("Project", back_populates="owner")

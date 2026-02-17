@@ -160,6 +160,8 @@ def create_user(
         password_hash=get_password_hash(payload.password),
         role=payload.role,
         custom_role_id=custom_role_id,
+        force_password_change=True,
+        password_changed_at=None,
         is_active=True,
     )
     db.add(user)
@@ -192,6 +194,8 @@ def update_user(
         user.role = payload.role
     if payload.password is not None:
         user.password_hash = get_password_hash(payload.password)
+        user.force_password_change = True
+        user.password_changed_at = None
     if payload.is_active is not None:
         user.is_active = payload.is_active
 

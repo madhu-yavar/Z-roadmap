@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.security import validate_password_policy
 from app.models.enums import UserRole
 
 
@@ -21,9 +24,7 @@ class UserCreate(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str) -> str:
-        if len(value or "") < 8:
-            raise ValueError("Password must be at least 8 characters")
-        return value
+        return validate_password_policy(value)
 
 
 class UserOut(BaseModel):
@@ -35,6 +36,8 @@ class UserOut(BaseModel):
     custom_role_id: int | None = None
     custom_role_name: str | None = None
     is_active: bool
+    force_password_change: bool
+    password_changed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -49,8 +52,8 @@ class UserUpdateIn(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password(cls, value: str | None) -> str | None:
-        if value is not None and len(value) < 8:
-            raise ValueError("Password must be at least 8 characters")
+        if value is not None:
+            return validate_password_policy(value)
         return value
 
 

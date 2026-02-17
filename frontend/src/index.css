@@ -315,6 +315,22 @@ p {
   text-decoration: underline;
 }
 
+.chip {
+  display: inline-block;
+  border-radius: var(--radius-full);
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.chip.warning {
+  color: #8a5700;
+  background: var(--warning-bg);
+  border-color: var(--warning-border);
+}
+
 .logout-min {
   border: 1px solid transparent;
   background: transparent;

@@ -201,6 +201,8 @@ type CurrentUser = {
   custom_role_id: number | null
   custom_role_name: string | null
   is_active: boolean
+  force_password_change: boolean
+  password_changed_at: string | null
 }
 
 type UserAdmin = {
@@ -212,6 +214,8 @@ type UserAdmin = {
   custom_role_id: number | null
   custom_role_name: string | null
   is_active: boolean
+  force_password_change: boolean
+  password_changed_at: string | null
 }
 
 type RolePolicy = {
@@ -345,6 +349,8 @@ const EFFICIENCY_MIN = 0.1
 const EFFICIENCY_MAX = 1.0
 const TEAM_SIZE_MIN = 1
 const EFFICIENCY_CONFIRM_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
+const PASSWORD_MIN_LENGTH = 12
+const PASSWORD_MAX_LENGTH = 128
 
 // Helper function to get project type color for Gantt bars
 function getProjectTypeColor(projectContext: string, deliveryMode: string): string {
@@ -422,6 +428,17 @@ function fmtDuration(ms: number): string {
   const hours = Math.floor(totalMinutes / 60)
   const minutes = totalMinutes % 60
   return `${hours}h ${String(minutes).padStart(2, '0')}m`
+}
+
+function isStrongPassword(value: string): boolean {
+  const pwd = String(value || '')
+  if (pwd.length < PASSWORD_MIN_LENGTH || pwd.length > PASSWORD_MAX_LENGTH) return false
+  if (!/[A-Z]/.test(pwd)) return false
+  if (!/[a-z]/.test(pwd)) return false
+  if (!/[0-9]/.test(pwd)) return false
+  if (!/[^A-Za-z0-9]/.test(pwd)) return false
+  if (/\s/.test(pwd)) return false
+  return true
 }
 
 function parsePercent(value: string | undefined): number | null {
@@ -601,6 +618,12 @@ function App() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+  const [passwordModalForced, setPasswordModalForced] = useState(false)
+  const [passwordCurrent, setPasswordCurrent] = useState('')
+  const [passwordNext, setPasswordNext] = useState('')
+  const [passwordConfirm, setPasswordConfirm] = useState('')
+  const [passwordSuccess, setPasswordSuccess] = useState('')
 
   const [dashboard, setDashboard] = useState<Dashboard | null>(null)
   const [documents, setDocuments] = useState<DocumentItem[]>([])
@@ -2035,6 +2058,70 @@ function App() {
     }
   }
 
+  function openPasswordModal(force = false) {
+    setPasswordSuccess('')
+    setPasswordCurrent('')
+    setPasswordNext('')
+    setPasswordConfirm('')
+    setPasswordModalForced(force)
+    setPasswordModalOpen(true)
+  }
+
+  function closePasswordModal() {
+    if (passwordModalForced) return
+    setPasswordModalOpen(false)
+    setPasswordSuccess('')
+    setPasswordCurrent('')
+    setPasswordNext('')
+    setPasswordConfirm('')
+  }
+
+  async function changeMyPassword(e: FormEvent) {
+    e.preventDefault()
+    if (!token) return
+    if (!passwordCurrent || !passwordNext || !passwordConfirm) {
+      setError('Current password and new password fields are required.')
+      return
+    }
+    if (passwordNext !== passwordConfirm) {
+      setError('New password and confirm password do not match.')
+      return
+    }
+    if (!isStrongPassword(passwordNext)) {
+      setError(
+        `Password must be ${PASSWORD_MIN_LENGTH}-${PASSWORD_MAX_LENGTH} chars with uppercase, lowercase, number, and special character (no spaces).`,
+      )
+      return
+    }
+    setBusy(true)
+    setError('')
+    setPasswordSuccess('')
+    try {
+      await api<{ ok: boolean; message: string }>(
+        '/auth/change-password',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            current_password: passwordCurrent,
+            new_password: passwordNext,
+          }),
+        },
+        token,
+      )
+      setPasswordSuccess('Password changed successfully.')
+      setPasswordModalOpen(false)
+      setPasswordModalForced(false)
+      setPasswordCurrent('')
+      setPasswordNext('')
+      setPasswordConfirm('')
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Password change failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function createCustomRole(payload: {
     name: string
     base_role: SystemRole
@@ -2146,6 +2233,12 @@ function App() {
     setSelectedRoadmapIds([])
     setSelectedDocumentIds([])
     setLlmTestResult(null)
+    setPasswordModalOpen(false)
+    setPasswordModalForced(false)
+    setPasswordCurrent('')
+    setPasswordNext('')
+    setPasswordConfirm('')
+    setPasswordSuccess('')
   }
 
   useEffect(() => {
@@ -2154,6 +2247,12 @@ function App() {
       setError(err instanceof Error ? err.message : 'Failed to load data')
     })
   }, [token])
+
+  useEffect(() => {
+    if (currentUser?.force_password_change && !passwordModalOpen) {
+      openPasswordModal(true)
+    }
+  }, [currentUser, passwordModalOpen])
 
   useEffect(() => {
     const options = providerModelMap[providerForm.provider] ?? []
@@ -2279,6 +2378,19 @@ function App() {
               </section>
             )}
           </div>
+          <button
+            type="button"
+            className="icon-link"
+            title="Change Password"
+            aria-label="Change Password"
+            onClick={() => openPasswordModal(false)}
+          >
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M7 10V7a5 5 0 1 1 10 0v3" />
+              <rect x="4" y="10" width="16" height="11" rx="2" ry="2" />
+              <circle cx="12" cy="15.5" r="1.5" />
+            </svg>
+          </button>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? 'icon-link active' : 'icon-link')} title="Settings">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3"/>
@@ -2300,6 +2412,73 @@ function App() {
         <div className="processing-indicator" role="status" aria-live="polite">
           <span className="processing-dot" />
           <span>Processing</span>
+        </div>
+      )}
+      {passwordModalOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Change Password">
+          <div className="modal-card">
+            <h3>{passwordModalForced ? 'Password Update Required' : 'Change Password'}</h3>
+            <p className="muted">
+              Password must be {PASSWORD_MIN_LENGTH}-{PASSWORD_MAX_LENGTH} characters and include uppercase, lowercase, number, and special character.
+            </p>
+            {passwordModalForced && (
+              <p className="error-text">Your account is marked for password update. Please change password to continue.</p>
+            )}
+            {passwordSuccess && <p className="success-text">{passwordSuccess}</p>}
+            <form className="stack" onSubmit={changeMyPassword}>
+              <label>
+                Current Password
+                <input
+                  type="password"
+                  value={passwordCurrent}
+                  disabled={busy}
+                  onChange={(e) => setPasswordCurrent(e.target.value)}
+                  autoComplete="current-password"
+                />
+              </label>
+              <label>
+                New Password
+                <input
+                  type="password"
+                  value={passwordNext}
+                  disabled={busy}
+                  onChange={(e) => setPasswordNext(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </label>
+              <label>
+                Confirm New Password
+                <input
+                  type="password"
+                  value={passwordConfirm}
+                  disabled={busy}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  autoComplete="new-password"
+                />
+              </label>
+              <div className="row-actions">
+                {!passwordModalForced && (
+                  <button type="button" className="ghost-btn" disabled={busy} onClick={closePasswordModal}>
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="primary-btn"
+                  disabled={
+                    busy ||
+                    !passwordCurrent ||
+                    !passwordNext ||
+                    !passwordConfirm ||
+                    passwordNext !== passwordConfirm ||
+                    !isStrongPassword(passwordNext)
+                  }
+                >
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -6100,14 +6279,19 @@ function SettingsPage({
                   value={newUserPassword}
                   disabled={busy}
                   onChange={(e) => setNewUserPassword(e.target.value)}
-                  placeholder="min 8 chars"
+                  placeholder="Strong password (12+ chars)"
                 />
               </label>
             </div>
+            {!isStrongPassword(newUserPassword) && newUserPassword.length > 0 && (
+              <p className="muted">
+                Password policy: {PASSWORD_MIN_LENGTH}-{PASSWORD_MAX_LENGTH} chars with uppercase, lowercase, number, and special character (no spaces).
+              </p>
+            )}
             <button
               className="primary-btn"
               type="button"
-              disabled={busy || !newUserName.trim() || !newUserEmail.trim() || newUserPassword.length < 8}
+              disabled={busy || !newUserName.trim() || !newUserEmail.trim() || !isStrongPassword(newUserPassword)}
               onClick={async () => {
                 await createPlatformUser({
                   full_name: newUserName.trim(),
@@ -6135,13 +6319,14 @@ function SettingsPage({
                 <th>Role</th>
                 <th>User Type</th>
                 <th>Status</th>
+                <th>Password State</th>
                 <th>Password Reset</th>
               </tr>
             </thead>
             <tbody>
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={8} className="muted">
                     No users found.
                   </td>
                 </tr>
@@ -6202,10 +6387,17 @@ function SettingsPage({
                     </label>
                   </td>
                   <td>
+                    {u.force_password_change ? (
+                      <span className="chip warning">Change Required</span>
+                    ) : (
+                      <span className="muted">Compliant</span>
+                    )}
+                  </td>
+                  <td>
                     <div className="row-actions">
                       <input
                         type="password"
-                        placeholder="new password"
+                        placeholder="strong password"
                         value={resetPasswords[u.id] || ''}
                         disabled={busy}
                         onChange={(e) => setResetPasswords((s) => ({ ...s, [u.id]: e.target.value }))}
@@ -6213,10 +6405,10 @@ function SettingsPage({
                       <button
                         className="ghost-btn tiny"
                         type="button"
-                        disabled={busy || (resetPasswords[u.id] || '').length < 8}
+                        disabled={busy || !isStrongPassword(resetPasswords[u.id] || '')}
                         onClick={async () => {
                           const pwd = (resetPasswords[u.id] || '').trim()
-                          if (pwd.length < 8) return
+                          if (!isStrongPassword(pwd)) return
                           await updatePlatformUser(u.id, { password: pwd })
                           setResetPasswords((s) => ({ ...s, [u.id]: '' }))
                         }}

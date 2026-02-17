@@ -21,6 +21,9 @@ def _ensure_compat_columns() -> None:
         "ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'ADMIN'",
         "ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'PO'",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS force_password_change BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP",
+        "UPDATE users SET password_changed_at = created_at WHERE password_changed_at IS NULL AND force_password_change = FALSE",
         "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'medium'",
         "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS project_context VARCHAR(30) NOT NULL DEFAULT 'client'",
         "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS initiative_type VARCHAR(30) NOT NULL DEFAULT 'new_feature'",
@@ -199,6 +202,8 @@ def _ensure_admin_user() -> None:
         if existing:
             existing.role = UserRole.ADMIN
             existing.is_active = True
+            existing.force_password_change = True
+            existing.password_changed_at = None
             db.add(existing)
             db.commit()
             return
@@ -208,6 +213,8 @@ def _ensure_admin_user() -> None:
                 email=email,
                 password_hash=get_password_hash(password),
                 role=UserRole.ADMIN,
+                force_password_change=True,
+                password_changed_at=None,
                 is_active=True,
             )
         )
