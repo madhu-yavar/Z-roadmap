@@ -13,6 +13,26 @@ import {
 import { ChatWidget } from './ChatWidget'
 import { DetailedRoadmap } from './DetailedRoadmap'
 
+type CapacityRoleAlert = {
+  role: 'FE' | 'BE' | 'AI' | 'PM' | string
+  status: 'OK' | 'WARNING' | 'CRITICAL' | string
+  portfolio: 'client' | 'internal' | '' | string
+  peak_week: string
+  peak_demand_fte: number
+  capacity_fte: number
+  required_extra_fte: number
+  peak_utilization_pct: number | null
+}
+
+type CapacityGovernanceAlert = {
+  status: 'OK' | 'WARNING' | 'CRITICAL' | string
+  message: string
+  shortage_roles: string[]
+  warning_roles: string[]
+  unscheduled_demand_items: number
+  role_alerts: CapacityRoleAlert[]
+}
+
 type Dashboard = {
   intake_total: number
   intake_understanding_pending: number
@@ -33,6 +53,7 @@ type Dashboard = {
   roadmap_by_mode: Record<string, number>
   commitments_by_priority: Record<string, number>
   roadmap_by_priority: Record<string, number>
+  capacity_governance_alert?: CapacityGovernanceAlert
 }
 
 type DocumentItem = {
@@ -867,6 +888,44 @@ function App() {
     }
 
     if (dashboard) {
+      if (isExec && dashboard.capacity_governance_alert) {
+        const capAlert = dashboard.capacity_governance_alert
+        if (capAlert.status === 'CRITICAL') {
+          const detail = capAlert.role_alerts
+            .filter((r) => r.status === 'CRITICAL')
+            .map((r) => `${r.role} (+${(r.required_extra_fte || 0).toFixed(1)} FTE)`)
+            .join(', ')
+          push({
+            id: 'alert-capacity-shortage',
+            level: 'critical',
+            title: 'Deterministic Capacity Shortage',
+            message: detail || capAlert.message,
+            path: '/dashboard',
+          })
+        } else if (capAlert.status === 'WARNING') {
+          const detail = capAlert.role_alerts
+            .filter((r) => r.status === 'WARNING')
+            .map((r) => `${r.role} (${(r.peak_utilization_pct || 0).toFixed(1)}%)`)
+            .join(', ')
+          push({
+            id: 'alert-capacity-risk',
+            level: 'warning',
+            title: 'Capacity Risk Near Limit',
+            message: detail || capAlert.message,
+            path: '/dashboard',
+          })
+        }
+        if (capAlert.unscheduled_demand_items > 0) {
+          push({
+            id: 'alert-unscheduled-demand',
+            level: 'warning',
+            title: 'Unscheduled Demand With FTE',
+            message: `${capAlert.unscheduled_demand_items} roadmap item(s) have FTE demand but no schedule.`,
+            path: '/roadmap-agent',
+          })
+        }
+      }
+
       if (role === 'BA') {
         if (dashboard.intake_draft > 0) {
           push({
@@ -2786,6 +2845,9 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
       roadmap: count(dashboard?.roadmap_by_priority, 'low'),
     },
   ]
+  const capacityAlert = dashboard?.capacity_governance_alert
+  const capacityCritical = capacityAlert?.role_alerts.filter((r) => r.status === 'CRITICAL') || []
+  const capacityWarning = capacityAlert?.role_alerts.filter((r) => r.status === 'WARNING') || []
 
   return (
     <main className="page-wrap">
@@ -2833,6 +2895,49 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
               {dashboard?.roadmap_movement_pending ?? 0}
             </strong>
           </div>
+        </article>
+        <article className="panel-card">
+          <h3>Deterministic Capacity Alert</h3>
+          {!capacityAlert ? (
+            <p className="muted">Capacity alert data is not available.</p>
+          ) : (
+            <div className="stack">
+              <div className="line-item">
+                <span className="muted">Status</span>
+                <strong
+                  className={
+                    capacityAlert.status === 'CRITICAL'
+                      ? 'capacity-meter-state error'
+                      : capacityAlert.status === 'WARNING'
+                        ? 'capacity-meter-state warn'
+                        : 'capacity-meter-state ok'
+                  }
+                >
+                  {capacityAlert.status}
+                </strong>
+              </div>
+              <p className="muted">{capacityAlert.message}</p>
+              {capacityCritical.length > 0 &&
+                capacityCritical.map((item) => (
+                  <div className="line-item" key={`cap-critical-${item.role}`}>
+                    <span className="muted">{item.role} shortage ({item.portfolio || 'n/a'})</span>
+                    <strong>{item.required_extra_fte.toFixed(1)} FTE</strong>
+                  </div>
+                ))}
+              {capacityCritical.length === 0 &&
+                capacityWarning.length > 0 &&
+                capacityWarning.map((item) => (
+                  <div className="line-item" key={`cap-warning-${item.role}`}>
+                    <span className="muted">{item.role} peak utilization ({item.portfolio || 'n/a'})</span>
+                    <strong>{(item.peak_utilization_pct || 0).toFixed(1)}%</strong>
+                  </div>
+                ))}
+              <div className="line-item">
+                <span className="muted">Unscheduled demand items</span>
+                <strong>{capacityAlert.unscheduled_demand_items}</strong>
+              </div>
+            </div>
+          )}
         </article>
       </section>
 

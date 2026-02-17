@@ -4,11 +4,13 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
+from app.models.governance_config import GovernanceConfig
 from app.models.intake_item import IntakeItem
 from app.models.roadmap_movement_request import RoadmapMovementRequest
 from app.models.roadmap_item import RoadmapItem
 from app.models.roadmap_plan_item import RoadmapPlanItem
 from app.schemas.dashboard import DashboardOut
+from app.services.capacity_governance import build_capacity_governance_alert
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -75,6 +77,9 @@ def get_dashboard_summary(db: Session = Depends(get_db), _=Depends(get_current_u
     roadmap_priority_rows = db.query(RoadmapPlanItem.priority, func.count(RoadmapPlanItem.id)).group_by(
         RoadmapPlanItem.priority
     ).all()
+    governance = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
+    all_plan_items = db.query(RoadmapPlanItem).all()
+    capacity_governance_alert = build_capacity_governance_alert(governance, all_plan_items)
 
     def _to_dict(rows):
         return {str(k or "unknown"): int(v or 0) for k, v in rows}
@@ -99,4 +104,5 @@ def get_dashboard_summary(db: Session = Depends(get_db), _=Depends(get_current_u
         roadmap_by_mode=_to_dict(roadmap_mode_rows),
         commitments_by_priority=_to_dict(commitments_priority_rows),
         roadmap_by_priority=_to_dict(roadmap_priority_rows),
+        capacity_governance_alert=capacity_governance_alert,
     )
