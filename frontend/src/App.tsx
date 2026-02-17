@@ -711,16 +711,16 @@ function App() {
     const roleName = currentUser.custom_role_name || currentUser.role
     switch (currentUser.role) {
       case 'ADMIN':
-        return `Welcome ${displayName} (${roleName}) - Access governance and user controls.`
+        return `Welcome ${displayName} (${roleName})`
       case 'CEO':
-        return `Welcome ${displayName} (${roleName}) - Executive governance console ready.`
+        return `Welcome ${displayName} (${roleName})`
       case 'VP':
-        return `Welcome ${displayName} (${roleName}) - Portfolio allocation view ready.`
+        return `Welcome ${displayName} (${roleName})`
       case 'BA':
-        return `Welcome ${displayName} (${roleName}) - Intake and requirement shaping workspace ready.`
+        return `Welcome ${displayName} (${roleName})`
       case 'PM':
       case 'PO':
-        return `Welcome ${displayName} (${roleName}) - Commitment and roadmap planning workspace ready.`
+        return `Welcome ${displayName} (${roleName})`
       default:
         return `Welcome ${displayName} (${roleName}).`
     }

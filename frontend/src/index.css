@@ -108,17 +108,17 @@ p {
 .top-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .welcome-banner {
-  max-width: 420px;
-  padding: 6px 10px;
+  max-width: 520px;
+  padding: 7px 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: var(--panel-alt);
+  background: #fbfbfd;
   color: var(--ink);
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -184,14 +184,19 @@ p {
 .icon-link {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: #fff;
+  appearance: none;
+  -webkit-appearance: none;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   color: var(--ink-light);
   text-decoration: none;
   font-size: 16px;
   transition: all 0.15s ease;
+  cursor: pointer;
 }
 
 .icon-link:hover {
@@ -333,13 +338,14 @@ p {
 
 .logout-min {
   border: 1px solid transparent;
-  background: transparent;
+  background: #fff;
   color: #6b7280;
-  padding: 6px 8px;
+  padding: 8px;
   border-radius: 8px;
   display: inline-grid;
   place-items: center;
   transition: all 0.15s ease;
+  cursor: pointer;
 }
 
 .logout-min svg {
