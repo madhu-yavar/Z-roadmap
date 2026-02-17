@@ -682,6 +682,26 @@ function App() {
   }, [intakeItems])
 
   const activeConfig = useMemo(() => llmConfigs.find((cfg) => cfg.is_active), [llmConfigs])
+  const welcomeBanner = useMemo(() => {
+    if (!currentUser) return ''
+    const displayName = (currentUser.full_name || '').trim() || currentUser.email
+    const roleName = currentUser.custom_role_name || currentUser.role
+    switch (currentUser.role) {
+      case 'ADMIN':
+        return `Welcome ${displayName} (${roleName}) - Access governance and user controls.`
+      case 'CEO':
+        return `Welcome ${displayName} (${roleName}) - Executive governance console ready.`
+      case 'VP':
+        return `Welcome ${displayName} (${roleName}) - Portfolio allocation view ready.`
+      case 'BA':
+        return `Welcome ${displayName} (${roleName}) - Intake and requirement shaping workspace ready.`
+      case 'PM':
+      case 'PO':
+        return `Welcome ${displayName} (${roleName}) - Commitment and roadmap planning workspace ready.`
+      default:
+        return `Welcome ${displayName} (${roleName}).`
+    }
+  }, [currentUser])
 
   const workflowAlerts = useMemo<WorkflowAlert[]>(() => {
     const role = currentUser?.role
@@ -2212,6 +2232,11 @@ function App() {
           </NavLink>
         </div>
         <div className="top-right">
+          {currentUser && (
+            <div className="welcome-banner" title={`${currentUser.full_name} (${currentUser.email})`}>
+              {welcomeBanner}
+            </div>
+          )}
           <div className="alerts-wrap" ref={alertsRef}>
             <button
               type="button"
