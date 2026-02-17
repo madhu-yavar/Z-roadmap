@@ -32,6 +32,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 EFFICIENCY_MIN = 0.1
 EFFICIENCY_MAX = 1.0
 LOCK_WINDOW_HOURS = 3
+TEAM_SIZE_MIN = 1
 
 
 def _get_or_create_governance(db: Session) -> GovernanceConfig:
@@ -122,8 +123,8 @@ def update_governance_team_config(
             status_code=423,
             detail=f"Team capacity is locked until {cfg.team_locked_until.isoformat()}",
         )
-    if min(payload.team_fe, payload.team_be, payload.team_ai, payload.team_pm) < 0:
-        raise HTTPException(status_code=400, detail="Team size cannot be negative")
+    if min(payload.team_fe, payload.team_be, payload.team_ai, payload.team_pm) < TEAM_SIZE_MIN:
+        raise HTTPException(status_code=400, detail=f"Team size must be at least {TEAM_SIZE_MIN} for FE, BE, AI, and PM")
     if min(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm) < EFFICIENCY_MIN:
         raise HTTPException(
             status_code=400,

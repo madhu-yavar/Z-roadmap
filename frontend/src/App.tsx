@@ -201,6 +201,14 @@ type RolePolicy = {
   responsibilities: string[]
 }
 
+type WorkflowAlert = {
+  id: string
+  level: 'critical' | 'warning' | 'info'
+  title: string
+  message: string
+  path: string
+}
+
 type IntakeSeedMeta = {
   priority: string
   project_context: string
@@ -271,6 +279,7 @@ type RoadmapPlanItem = {
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000'
 const EFFICIENCY_MIN = 0.1
 const EFFICIENCY_MAX = 1.0
+const TEAM_SIZE_MIN = 1
 
 // Helper function to get project type color for Gantt bars
 function getProjectTypeColor(projectContext: string, deliveryMode: string): string {
@@ -576,11 +585,13 @@ function App() {
   const [rolePolicies, setRolePolicies] = useState<RolePolicy[]>([])
   const [useCustomModel, setUseCustomModel] = useState(false)
   const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null)
+  const [alertsOpen, setAlertsOpen] = useState(false)
   const [chatSupportRequest, setChatSupportRequest] = useState<{
     key: string
     intakeItemId: number
     title: string
   } | null>(null)
+  const alertsRef = useRef<HTMLDivElement | null>(null)
 
   const isLoggedIn = Boolean(token)
 
@@ -591,6 +602,236 @@ function App() {
   }, [intakeItems])
 
   const activeConfig = useMemo(() => llmConfigs.find((cfg) => cfg.is_active), [llmConfigs])
+
+  const workflowAlerts = useMemo<WorkflowAlert[]>(() => {
+    const role = currentUser?.role
+    if (!role) return []
+    const alerts: WorkflowAlert[] = []
+    const now = Date.now()
+    const isExec = role === 'CEO' || role === 'VP'
+    const isDelivery = role === 'PM' || role === 'PO'
+
+    const push = (item: WorkflowAlert) => alerts.push(item)
+
+    if (!activeConfig && (isExec || role === 'BA' || isDelivery)) {
+      push({
+        id: 'alert-no-llm',
+        level: 'warning',
+        title: 'AI Provider Not Configured',
+        message: 'No active LLM provider is configured in Settings.',
+        path: '/settings',
+      })
+    }
+
+    if (governanceConfig) {
+      const teamMin = Math.min(
+        governanceConfig.team_fe || 0,
+        governanceConfig.team_be || 0,
+        governanceConfig.team_ai || 0,
+        governanceConfig.team_pm || 0,
+      )
+      const effMin = Math.min(
+        governanceConfig.efficiency_fe || 0,
+        governanceConfig.efficiency_be || 0,
+        governanceConfig.efficiency_ai || 0,
+        governanceConfig.efficiency_pm || 0,
+      )
+      const effMax = Math.max(
+        governanceConfig.efficiency_fe || 0,
+        governanceConfig.efficiency_be || 0,
+        governanceConfig.efficiency_ai || 0,
+        governanceConfig.efficiency_pm || 0,
+      )
+      const quotaTotal = (governanceConfig.quota_client || 0) + (governanceConfig.quota_internal || 0)
+      const teamLock = governanceConfig.team_locked_until ? new Date(governanceConfig.team_locked_until).getTime() : 0
+      const quotaLock = governanceConfig.quota_locked_until ? new Date(governanceConfig.quota_locked_until).getTime() : 0
+
+      if (role === 'CEO' && teamMin < TEAM_SIZE_MIN) {
+        push({
+          id: 'alert-team-size-invalid',
+          level: 'critical',
+          title: 'Team Capacity Invalid',
+          message: `One or more team sizes are below ${TEAM_SIZE_MIN}.`,
+          path: '/settings',
+        })
+      }
+      if (role === 'CEO' && (effMin < EFFICIENCY_MIN || effMax > EFFICIENCY_MAX)) {
+        push({
+          id: 'alert-efficiency-invalid',
+          level: 'critical',
+          title: 'Efficiency Out of Bounds',
+          message: `Efficiency must stay between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}.`,
+          path: '/settings',
+        })
+      }
+      if (isExec && quotaTotal > 1.0 + 1e-9) {
+        push({
+          id: 'alert-quota-over',
+          level: 'critical',
+          title: 'Quota Limit Breached',
+          message: `Client + Internal quota is ${quotaTotal.toFixed(2)} (> 1.00).`,
+          path: '/settings',
+        })
+      }
+      if (isExec && quotaTotal < 1.0 - 1e-9) {
+        push({
+          id: 'alert-quota-under',
+          level: 'info',
+          title: 'Unallocated Capacity',
+          message: `Portfolio quota total is ${quotaTotal.toFixed(2)}; capacity remains unallocated.`,
+          path: '/settings',
+        })
+      }
+      if (role === 'CEO' && Number.isFinite(teamLock) && teamLock > now) {
+        push({
+          id: 'alert-team-locked',
+          level: 'warning',
+          title: 'Team Capacity Locked',
+          message: `Team configuration is locked for ${fmtDuration(teamLock - now)}.`,
+          path: '/settings',
+        })
+      }
+      if (isExec && Number.isFinite(quotaLock) && quotaLock > now) {
+        push({
+          id: 'alert-quota-locked',
+          level: 'warning',
+          title: 'Portfolio Quotas Locked',
+          message: `Quota configuration is locked for ${fmtDuration(quotaLock - now)}.`,
+          path: '/settings',
+        })
+      }
+    } else if (isExec || isDelivery) {
+      push({
+        id: 'alert-governance-missing',
+        level: 'critical',
+        title: 'Governance Missing',
+        message: 'Team capacity and portfolio quotas are not configured.',
+        path: '/settings',
+      })
+    }
+
+    if (dashboard) {
+      if (role === 'BA') {
+        if (dashboard.intake_draft > 0) {
+          push({
+            id: 'alert-intake-draft',
+            level: 'info',
+            title: 'Draft Intake Pending',
+            message: `${dashboard.intake_draft} intake item(s) still in draft.`,
+            path: '/intake',
+          })
+        }
+        if (dashboard.intake_understanding_pending > 0) {
+          push({
+            id: 'alert-intake-review',
+            level: 'warning',
+            title: 'Understanding Review Pending',
+            message: `${dashboard.intake_understanding_pending} item(s) awaiting clarification/approval.`,
+            path: '/intake',
+          })
+        }
+      }
+
+      if (role === 'CEO' && dashboard.intake_understanding_pending > 0) {
+        push({
+          id: 'alert-ceo-intake-approval',
+          level: 'warning',
+          title: 'CEO Intake Approval Needed',
+          message: `${dashboard.intake_understanding_pending} intake item(s) require approval.`,
+          path: '/intake',
+        })
+      }
+
+      if (isExec || isDelivery) {
+        if (dashboard.commitments_ready > 0) {
+          push({
+            id: 'alert-commitments-ready',
+            level: 'info',
+            title: 'Commitments Ready',
+            message: `${dashboard.commitments_ready} commitment(s) are ready for roadmap planning.`,
+            path: '/roadmap',
+          })
+        }
+        if (dashboard.commitments_locked > 0) {
+          push({
+            id: 'alert-commitments-locked',
+            level: 'warning',
+            title: 'Locked Commitments',
+            message: `${dashboard.commitments_locked} commitment(s) are locked and need unlock flow.`,
+            path: '/roadmap',
+          })
+        }
+      }
+    }
+
+    if (isExec || isDelivery) {
+      const unscheduledPlans = roadmapPlanItems.filter((p) => !p.planned_start_date || !p.planned_end_date).length
+      if (unscheduledPlans > 0) {
+        push({
+          id: 'alert-unscheduled-plans',
+          level: 'warning',
+          title: 'Roadmap Dates Missing',
+          message: `${unscheduledPlans} roadmap item(s) missing start/end dates.`,
+          path: '/roadmap-agent',
+        })
+      }
+      if (role === 'CEO' || isDelivery) {
+        const missingOwners = roadmapPlanItems.filter((p) => !(p.accountable_person || '').trim()).length
+        if (missingOwners > 0) {
+          push({
+            id: 'alert-missing-owner',
+            level: 'warning',
+            title: 'Owner Missing',
+            message: `${missingOwners} roadmap item(s) do not have accountable owner.`,
+            path: '/roadmap-agent',
+          })
+        }
+      }
+    }
+
+    if (role === 'ADMIN') {
+      if (!users.length) {
+        push({
+          id: 'alert-no-users-loaded',
+          level: 'warning',
+          title: 'User Directory Unavailable',
+          message: 'User list is empty or unavailable.',
+          path: '/settings',
+        })
+      } else {
+        const hasCEO = users.some((u) => u.role === 'CEO' && u.is_active)
+        const hasVP = users.some((u) => u.role === 'VP' && u.is_active)
+        const hasBA = users.some((u) => u.role === 'BA' && u.is_active)
+        const hasDelivery = users.some((u) => (u.role === 'PM' || u.role === 'PO') && u.is_active)
+        const missingRoles: string[] = []
+        if (!hasCEO) missingRoles.push('CEO')
+        if (!hasVP) missingRoles.push('VP')
+        if (!hasBA) missingRoles.push('BA')
+        if (!hasDelivery) missingRoles.push('PM/PO')
+        if (missingRoles.length) {
+          push({
+            id: 'alert-missing-roles',
+            level: 'critical',
+            title: 'Mandatory Roles Missing',
+            message: `No active user for: ${missingRoles.join(', ')}.`,
+            path: '/settings',
+          })
+        }
+        const inactiveUsers = users.filter((u) => !u.is_active).length
+        if (inactiveUsers > 0) {
+          push({
+            id: 'alert-inactive-users',
+            level: 'info',
+            title: 'Inactive Users Present',
+            message: `${inactiveUsers} user account(s) are inactive.`,
+            path: '/settings',
+          })
+        }
+      }
+    }
+
+    return alerts
+  }, [currentUser, activeConfig, governanceConfig, dashboard, roadmapPlanItems, users])
 
   const selectedIntakeItem = useMemo(
     () => intakeItems.find((item) => item.id === selectedIntakeId) || null,
@@ -1326,6 +1567,15 @@ function App() {
     efficiency_pm: string
   }) {
     if (!token) return
+    const teamFe = Math.max(0, Math.round(toNumberOrZero(payload.team_fe)))
+    const teamBe = Math.max(0, Math.round(toNumberOrZero(payload.team_be)))
+    const teamAi = Math.max(0, Math.round(toNumberOrZero(payload.team_ai)))
+    const teamPm = Math.max(0, Math.round(toNumberOrZero(payload.team_pm)))
+    const minTeam = Math.min(teamFe, teamBe, teamAi, teamPm)
+    if (minTeam < TEAM_SIZE_MIN) {
+      setError(`Team size must be at least ${TEAM_SIZE_MIN} for FE, BE, AI, and PM.`)
+      return
+    }
     const effFe = Math.max(0, toNumberOrZero(payload.efficiency_fe))
     const effBe = Math.max(0, toNumberOrZero(payload.efficiency_be))
     const effAi = Math.max(0, toNumberOrZero(payload.efficiency_ai))
@@ -1337,7 +1587,7 @@ function App() {
       return
     }
     const proceed = window.confirm(
-      'CEO acknowledgement required: saving Team Capacity/Efficiency will lock these values for 3 hours for governance consistency. Continue?',
+      `CEO acknowledgement required:\n- Team size must be at least ${TEAM_SIZE_MIN} for FE/BE/AI/PM\n- Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}\n- Save will lock Team Capacity for 3 hours\nContinue?`,
     )
     if (!proceed) return
     setBusy(true)
@@ -1348,10 +1598,10 @@ function App() {
         {
           method: 'POST',
           body: JSON.stringify({
-            team_fe: Math.max(0, Math.round(toNumberOrZero(payload.team_fe))),
-            team_be: Math.max(0, Math.round(toNumberOrZero(payload.team_be))),
-            team_ai: Math.max(0, Math.round(toNumberOrZero(payload.team_ai))),
-            team_pm: Math.max(0, Math.round(toNumberOrZero(payload.team_pm))),
+            team_fe: teamFe,
+            team_be: teamBe,
+            team_ai: teamAi,
+            team_pm: teamPm,
             efficiency_fe: effFe,
             efficiency_be: effBe,
             efficiency_ai: effAi,
@@ -1378,7 +1628,7 @@ function App() {
       return
     }
     const proceed = window.confirm(
-      'VP/CEO acknowledgement required: saving Portfolio Quotas will lock quota values for 3 hours. Continue?',
+      'VP/CEO acknowledgement required:\n- Total quota must be <= 1.00\n- Save will lock Portfolio Quotas for 3 hours\nContinue?',
     )
     if (!proceed) return
     setBusy(true)
@@ -1515,6 +1765,17 @@ function App() {
     }
   }, [providerForm.provider, providerForm.model, useCustomModel])
 
+  useEffect(() => {
+    if (!alertsOpen) return
+    function onMouseDown(event: MouseEvent) {
+      if (alertsRef.current && !alertsRef.current.contains(event.target as Node)) {
+        setAlertsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [alertsOpen])
+
   if (!isLoggedIn) {
     return (
       <div className="auth-shell">
@@ -1574,6 +1835,48 @@ function App() {
           </NavLink>
         </div>
         <div className="top-right">
+          <div className="alerts-wrap" ref={alertsRef}>
+            <button
+              type="button"
+              className={alertsOpen ? 'icon-link active alerts-toggle' : 'icon-link alerts-toggle'}
+              title="Alerts"
+              aria-label="Alerts"
+              onClick={() => setAlertsOpen((v) => !v)}
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+              {workflowAlerts.length > 0 && (
+                <span className="alert-badge">{workflowAlerts.length > 99 ? '99+' : workflowAlerts.length}</span>
+              )}
+            </button>
+            {alertsOpen && (
+              <section className="alerts-panel">
+                <div className="alerts-head">
+                  <strong>Workflow Alerts</strong>
+                  <span className="muted">{workflowAlerts.length}</span>
+                </div>
+                {workflowAlerts.length === 0 ? (
+                  <p className="muted alerts-empty">No active alerts.</p>
+                ) : (
+                  <ul className="alerts-list">
+                    {workflowAlerts.map((alert) => (
+                      <li key={alert.id} className={`alerts-item ${alert.level}`}>
+                        <div className="alerts-item-head">
+                          <strong>{alert.title}</strong>
+                          <NavLink to={alert.path} onClick={() => setAlertsOpen(false)} className="alerts-open-link">
+                            Open
+                          </NavLink>
+                        </div>
+                        <p>{alert.message}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+          </div>
           <NavLink to="/settings" className={({ isActive }) => (isActive ? 'icon-link active' : 'icon-link')} title="Settings">
             <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="3"/>
@@ -4509,6 +4812,32 @@ function SettingsPage({
   const [docLevel, setDocLevel] = useState<'l1' | 'l2'>('l1')
   const [resetPasswords, setResetPasswords] = useState<Record<number, string>>({})
   const [nowMs, setNowMs] = useState(Date.now())
+  const teamFeNum = Number(teamFe)
+  const teamBeNum = Number(teamBe)
+  const teamAiNum = Number(teamAi)
+  const teamPmNum = Number(teamPm)
+  const teamSizeInvalid =
+    (Number.isFinite(teamFeNum) ? teamFeNum : 0) < TEAM_SIZE_MIN ||
+    (Number.isFinite(teamBeNum) ? teamBeNum : 0) < TEAM_SIZE_MIN ||
+    (Number.isFinite(teamAiNum) ? teamAiNum : 0) < TEAM_SIZE_MIN ||
+    (Number.isFinite(teamPmNum) ? teamPmNum : 0) < TEAM_SIZE_MIN
+  const effFeNum = Number(effFe)
+  const effBeNum = Number(effBe)
+  const effAiNum = Number(effAi)
+  const effPmNum = Number(effPm)
+  const minEffNum = Math.min(
+    Number.isFinite(effFeNum) ? effFeNum : 0,
+    Number.isFinite(effBeNum) ? effBeNum : 0,
+    Number.isFinite(effAiNum) ? effAiNum : 0,
+    Number.isFinite(effPmNum) ? effPmNum : 0,
+  )
+  const maxEffNum = Math.max(
+    Number.isFinite(effFeNum) ? effFeNum : 0,
+    Number.isFinite(effBeNum) ? effBeNum : 0,
+    Number.isFinite(effAiNum) ? effAiNum : 0,
+    Number.isFinite(effPmNum) ? effPmNum : 0,
+  )
+  const efficiencyInvalid = minEffNum < EFFICIENCY_MIN || maxEffNum > EFFICIENCY_MAX
   const quotaClientNum = Number(quotaClient)
   const quotaInternalNum = Number(quotaInternal)
   const quotaTotal = (Number.isFinite(quotaClientNum) ? quotaClientNum : 0) + (Number.isFinite(quotaInternalNum) ? quotaInternalNum : 0)
@@ -4551,19 +4880,19 @@ function SettingsPage({
             <div className="split-4">
               <label>
                 FE Team Size
-                <input type="number" min={0} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} />
+                <input type="number" min={TEAM_SIZE_MIN} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} />
               </label>
               <label>
                 BE Team Size
-                <input type="number" min={0} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} />
+                <input type="number" min={TEAM_SIZE_MIN} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} />
               </label>
               <label>
                 AI Team Size
-                <input type="number" min={0} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} />
+                <input type="number" min={TEAM_SIZE_MIN} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} />
               </label>
               <label>
                 PM Team Size
-                <input type="number" min={0} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} />
+                <input type="number" min={TEAM_SIZE_MIN} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} />
               </label>
             </div>
             <div className="split-4">
@@ -4616,7 +4945,16 @@ function SettingsPage({
                 />
               </label>
             </div>
-            <p className="muted">Efficiency range: {EFFICIENCY_MIN.toFixed(2)} to {EFFICIENCY_MAX.toFixed(2)}</p>
+            <p className="muted">
+              Team size minimum: {TEAM_SIZE_MIN}. Efficiency range: {EFFICIENCY_MIN.toFixed(2)} to {EFFICIENCY_MAX.toFixed(2)}.
+            </p>
+            {(teamSizeInvalid || efficiencyInvalid) && !isTeamLockActive && (
+              <p className="error-text">
+                {teamSizeInvalid
+                  ? `All team sizes must be at least ${TEAM_SIZE_MIN}.`
+                  : `Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}.`}
+              </p>
+            )}
             {isTeamLockActive && (
               <p className="error-text">
                 Team capacity is locked until {fmtDateTime(governanceConfig?.team_locked_until || '')}
@@ -4626,7 +4964,7 @@ function SettingsPage({
             <button
               className="primary-btn"
               type="button"
-              disabled={!canEditTeam || busy || isTeamLockActive}
+              disabled={!canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid}
               onClick={() =>
                 void saveGovernanceTeamConfig({
                   team_fe: teamFe,
