@@ -1313,6 +1313,10 @@ function App() {
     efficiency_pm: string
   }) {
     if (!token) return
+    const proceed = window.confirm(
+      'Warning: This will update and lock Team Capacity/Efficiency values used for capacity validation across commitments and roadmap planning. Continue?',
+    )
+    if (!proceed) return
     setBusy(true)
     setError('')
     try {
@@ -1344,6 +1348,12 @@ function App() {
 
   async function saveGovernanceQuotas(payload: { quota_client: string; quota_internal: string }) {
     if (!token) return
+    const quotaClient = Math.max(0, toNumberOrZero(payload.quota_client))
+    const quotaInternal = Math.max(0, toNumberOrZero(payload.quota_internal))
+    if (quotaClient + quotaInternal > 1.0 + 1e-9) {
+      setError('Invalid quota allocation: Client + Internal must be less than or equal to 1.00.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -1352,8 +1362,8 @@ function App() {
         {
           method: 'POST',
           body: JSON.stringify({
-            quota_client: Math.max(0, toNumberOrZero(payload.quota_client)),
-            quota_internal: Math.max(0, toNumberOrZero(payload.quota_internal)),
+            quota_client: quotaClient,
+            quota_internal: quotaInternal,
           }),
         },
         token,
@@ -4471,6 +4481,10 @@ function SettingsPage({
   const [docApprovedBy, setDocApprovedBy] = useState('CEO')
   const [docLevel, setDocLevel] = useState<'l1' | 'l2'>('l1')
   const [resetPasswords, setResetPasswords] = useState<Record<number, string>>({})
+  const quotaClientNum = Number(quotaClient)
+  const quotaInternalNum = Number(quotaInternal)
+  const quotaTotal = (Number.isFinite(quotaClientNum) ? quotaClientNum : 0) + (Number.isFinite(quotaInternalNum) ? quotaInternalNum : 0)
+  const quotaTotalInvalid = quotaTotal > 1.0 + 1e-9
 
   useEffect(() => {
     if (!governanceConfig) return
@@ -4581,11 +4595,13 @@ function SettingsPage({
                 />
               </label>
             </div>
-            <p className="muted">Total quota should be ≤ 1.00 across client and internal portfolios.</p>
+            <p className={quotaTotalInvalid ? 'error-text' : 'muted'}>
+              Total quota should be ≤ 1.00 across client and internal portfolios. Current total: {quotaTotal.toFixed(2)}
+            </p>
             <button
               className="primary-btn"
               type="button"
-              disabled={!canEditQuotas || busy}
+              disabled={!canEditQuotas || busy || quotaTotalInvalid}
               onClick={() =>
                 void saveGovernanceQuotas({
                   quota_client: quotaClient,
