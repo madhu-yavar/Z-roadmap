@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.intake_item import IntakeItem
 from app.models.llm_config import LLMConfig
+from app.models.roadmap_movement_request import RoadmapMovementRequest
 from app.models.roadmap_item import RoadmapItem
 from app.models.roadmap_plan_item import RoadmapPlanItem
 from app.services.llm_client import LLMClientError, call_llm_json
@@ -61,6 +62,13 @@ def _build_context(db: Session) -> tuple[dict, list[str]]:
         .scalar()
         or 0
     )
+    roadmap_movement_pending = (
+        db.query(func.count(RoadmapMovementRequest.id))
+        .filter(RoadmapMovementRequest.status == "pending")
+        .scalar()
+        or 0
+    )
+    roadmap_movement_total = db.query(func.count(RoadmapMovementRequest.id)).scalar() or 0
 
     # Sample rows for conversational detail (bounded).
     intake_items = (
@@ -72,6 +80,12 @@ def _build_context(db: Session) -> tuple[dict, list[str]]:
     )
     commitments = commitment_candidates_q.order_by(RoadmapItem.created_at.desc()).limit(120).all()
     roadmap_items = db.query(RoadmapPlanItem).order_by(RoadmapPlanItem.created_at.desc()).limit(120).all()
+    roadmap_movements = (
+        db.query(RoadmapMovementRequest)
+        .order_by(RoadmapMovementRequest.id.desc())
+        .limit(120)
+        .all()
+    )
 
     context = {
         "snapshot_at": datetime.utcnow().isoformat(),
@@ -88,6 +102,8 @@ def _build_context(db: Session) -> tuple[dict, list[str]]:
             "commitments_ready": int(commitments_ready_total),
             "roadmap_total": int(roadmap_total),
             "roadmap_at_risk": int(roadmap_at_risk),
+            "roadmap_movement_pending": int(roadmap_movement_pending),
+            "roadmap_movement_total": int(roadmap_movement_total),
             "pipeline_total": int(intake_open_total + commitments_candidates_total),
         },
         "intake_items": [
@@ -132,11 +148,34 @@ def _build_context(db: Session) -> tuple[dict, list[str]]:
             }
             for r in roadmap_items
         ],
+        "roadmap_movements": [
+            {
+                "id": m.id,
+                "plan_item_id": m.plan_item_id,
+                "bucket_item_id": m.bucket_item_id,
+                "request_type": m.request_type,
+                "status": m.status,
+                "from_start_date": m.from_start_date,
+                "from_end_date": m.from_end_date,
+                "to_start_date": m.to_start_date,
+                "to_end_date": m.to_end_date,
+                "reason": m.reason,
+                "blocker": m.blocker,
+                "decision_reason": m.decision_reason,
+                "requested_by": m.requested_by,
+                "decided_by": m.decided_by,
+                "requested_at": m.requested_at.isoformat() if m.requested_at else "",
+                "decided_at": m.decided_at.isoformat() if m.decided_at else "",
+                "executed_at": m.executed_at.isoformat() if m.executed_at else "",
+            }
+            for m in roadmap_movements
+        ],
     }
     evidence_catalog = (
         [f"intake:{i.id}" for i in intake_items]
         + [f"commitment:{c.id}" for c in commitments]
         + [f"roadmap:{r.id}" for r in roadmap_items]
+        + [f"movement:{m.id}" for m in roadmap_movements]
         + ["summary:intake", "summary:commitments", "summary:roadmap"]
     )
     return context, evidence_catalog
@@ -176,6 +215,12 @@ def _deterministic_count_answer(question: str, context: dict) -> tuple[str, list
         return (f"There are {summary.get('commitments_total', 0)} projects in commitments.", ["summary:commitments"])
     if "roadmap" in q:
         return (f"There are {summary.get('roadmap_total', 0)} projects on roadmap.", ["summary:roadmap"])
+    if "movement" in q or "reschedul" in q or "reschedule" in q:
+        return (
+            f"There are {summary.get('roadmap_movement_total', 0)} roadmap movement records, "
+            f"with {summary.get('roadmap_movement_pending', 0)} pending approval.",
+            ["summary:roadmap"],
+        )
     if "risk" in q or "at risk" in q:
         return (f"There are {summary.get('roadmap_at_risk', 0)} roadmap projects at risk.", ["summary:roadmap"])
     return None
@@ -203,6 +248,13 @@ def _fallback_answer(question: str, context: dict) -> tuple[str, list[str]]:
     if "roadmap" in q and ("count" in q or "how many" in q):
         val = summary.get("roadmap_total", 0)
         return f"There are {val} items currently in roadmap planning.", ["summary:roadmap"]
+    if "movement" in q or "reschedul" in q or "reschedule" in q:
+        total = summary.get("roadmap_movement_total", 0)
+        pending = summary.get("roadmap_movement_pending", 0)
+        return (
+            f"There are {total} roadmap movement events, with {pending} pending approval.",
+            ["summary:roadmap"],
+        )
     if "commit" in q and ("count" in q or "how many" in q):
         val = summary.get("commitments_total", 0)
         return f"There are {val} commitment candidates in pre-roadmap planning.", ["summary:commitments"]

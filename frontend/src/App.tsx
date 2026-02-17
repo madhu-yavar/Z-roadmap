@@ -21,6 +21,10 @@ type Dashboard = {
   commitments_ready: number
   commitments_locked: number
   roadmap_total: number
+  roadmap_movement_pending: number
+  roadmap_movement_approved: number
+  roadmap_movement_rejected: number
+  roadmap_movement_total: number
   intake_by_context: Record<string, number>
   commitments_by_context: Record<string, number>
   roadmap_by_context: Record<string, number>
@@ -139,6 +143,10 @@ type GovernanceConfig = {
   efficiency_confirmed_ceo_by: number | null
   efficiency_confirmed_vp_at: string | null
   efficiency_confirmed_vp_by: number | null
+  roadmap_locked: boolean
+  roadmap_locked_at: string | null
+  roadmap_locked_by: number | null
+  roadmap_lock_note: string
 }
 
 type CapacityValidationResult = {
@@ -233,6 +241,28 @@ type CustomRole = {
   can_edit_roadmap: boolean
   can_manage_settings: boolean
   is_active: boolean
+}
+
+type RoadmapMovementRequest = {
+  id: number
+  plan_item_id: number
+  bucket_item_id: number
+  request_type: string
+  status: string
+  from_start_date: string
+  from_end_date: string
+  to_start_date: string
+  to_end_date: string
+  reason: string
+  blocker: string
+  decision_reason: string
+  requested_by: number | null
+  decided_by: number | null
+  requested_at: string
+  decided_at: string | null
+  executed_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 type WorkflowAlert = {
@@ -630,6 +660,7 @@ function App() {
   })
   const [governanceConfig, setGovernanceConfig] = useState<GovernanceConfig | null>(null)
   const [users, setUsers] = useState<UserAdmin[]>([])
+  const [roadmapMovementRequests, setRoadmapMovementRequests] = useState<RoadmapMovementRequest[]>([])
   const [customRoles, setCustomRoles] = useState<CustomRole[]>([])
   const [rolePolicies, setRolePolicies] = useState<RolePolicy[]>([])
   const [useCustomModel, setUseCustomModel] = useState(false)
@@ -749,6 +780,15 @@ function App() {
           path: '/settings',
         })
       }
+      if (role === 'CEO' && governanceConfig.roadmap_locked) {
+        push({
+          id: 'alert-roadmap-locked',
+          level: 'info',
+          title: 'Roadmap Is Locked',
+          message: `Locked governance is active${governanceConfig.roadmap_locked_at ? ` since ${fmtDateTime(governanceConfig.roadmap_locked_at)}` : ''}.`,
+          path: '/roadmap-agent',
+        })
+      }
       if (role === 'CEO') {
         const lastConfirmed = governanceConfig.efficiency_confirmed_ceo_at ? new Date(governanceConfig.efficiency_confirmed_ceo_at).getTime() : 0
         if (!Number.isFinite(lastConfirmed) || lastConfirmed <= 0 || now - lastConfirmed >= EFFICIENCY_CONFIRM_INTERVAL_MS) {
@@ -835,6 +875,47 @@ function App() {
           })
         }
       }
+      if (role === 'CEO' && (dashboard.roadmap_total || 0) > 0 && !governanceConfig?.roadmap_locked) {
+        push({
+          id: 'alert-roadmap-lock-missing',
+          level: 'warning',
+          title: 'Roadmap Not Locked',
+          message: 'Roadmap has committed items but governance lock is not enabled.',
+          path: '/roadmap-agent',
+        })
+      }
+      if (role === 'CEO' && (dashboard.roadmap_movement_pending || 0) > 0) {
+        push({
+          id: 'alert-roadmap-move-pending',
+          level: 'critical',
+          title: 'Movement Approvals Pending',
+          message: `${dashboard.roadmap_movement_pending} roadmap movement request(s) await CEO decision.`,
+          path: '/roadmap-agent',
+        })
+      }
+    }
+
+    if (isDelivery) {
+      const pendingMine = roadmapMovementRequests.filter((r) => r.status === 'pending').length
+      if (pendingMine > 0) {
+        push({
+          id: 'alert-my-move-pending',
+          level: 'warning',
+          title: 'Movement Request Pending',
+          message: `${pendingMine} of your roadmap movement request(s) are pending CEO approval.`,
+          path: '/roadmap-agent',
+        })
+      }
+      const rejectedMine = roadmapMovementRequests.filter((r) => r.status === 'rejected').length
+      if (rejectedMine > 0) {
+        push({
+          id: 'alert-my-move-rejected',
+          level: 'info',
+          title: 'Movement Request Rejected',
+          message: `${rejectedMine} of your roadmap movement request(s) were rejected. Review decision notes.`,
+          path: '/roadmap-agent',
+        })
+      }
     }
 
     if (isExec || isDelivery) {
@@ -913,7 +994,7 @@ function App() {
     }
 
     return alerts
-  }, [currentUser, activeConfig, governanceConfig, dashboard, roadmapPlanItems, users, customRoles])
+  }, [currentUser, activeConfig, governanceConfig, dashboard, roadmapPlanItems, users, customRoles, roadmapMovementRequests])
 
   const selectedIntakeItem = useMemo(
     () => intakeItems.find((item) => item.id === selectedIntakeId) || null,
@@ -975,7 +1056,7 @@ function App() {
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
 
   async function loadData(activeToken: string) {
-    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, customRolesRes, rolePoliciesRes] =
+    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, movementRes, customRolesRes, rolePoliciesRes] =
       await Promise.allSettled([
         api<CurrentUser>('/auth/me', {}, activeToken),
         api<Dashboard>('/dashboard/summary', {}, activeToken),
@@ -987,6 +1068,7 @@ function App() {
         api<LLMConfig[]>('/settings/llm', {}, activeToken),
         api<GovernanceConfig>('/settings/governance', {}, activeToken),
         api<UserAdmin[]>('/users', {}, activeToken),
+        api<RoadmapMovementRequest[]>('/roadmap/movement/requests', {}, activeToken),
         api<CustomRole[]>('/users/custom-roles', {}, activeToken),
         api<RolePolicy[]>('/users/roles-matrix', {}, activeToken),
       ])
@@ -1009,6 +1091,7 @@ function App() {
     setLlmConfigs(cfgRes.status === 'fulfilled' ? cfgRes.value : [])
     setGovernanceConfig(governanceRes.status === 'fulfilled' ? governanceRes.value : null)
     setUsers(usersRes.status === 'fulfilled' ? usersRes.value : [])
+    setRoadmapMovementRequests(movementRes.status === 'fulfilled' ? movementRes.value : [])
     setCustomRoles(customRolesRes.status === 'fulfilled' ? customRolesRes.value : [])
     setRolePolicies(rolePoliciesRes.status === 'fulfilled' ? rolePoliciesRes.value : [])
   }
@@ -1481,6 +1564,7 @@ function App() {
       planning_status: string
       confidence: string
       dependency_ids: number[]
+      change_reason?: string
     },
   ) {
     if (!token) return
@@ -1498,6 +1582,117 @@ function App() {
       await loadData(token)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Roadmap planning update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function setRoadmapGovernanceLock(payload: { roadmap_locked: boolean; note: string }) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<{
+        roadmap_locked: boolean
+        roadmap_locked_at: string | null
+        roadmap_locked_by: number | null
+        roadmap_lock_note: string
+      }>(
+        '/roadmap/governance-lock',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Roadmap governance lock update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function submitRoadmapMovementRequest(
+    planItemId: number,
+    payload: {
+      proposed_start_date: string
+      proposed_end_date: string
+      reason: string
+      blocker: string
+    },
+  ) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<RoadmapMovementRequest>(
+        `/roadmap/plan/items/${planItemId}/movement-request`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Roadmap movement request failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function decideRoadmapMovementRequest(
+    requestId: number,
+    payload: {
+      decision: 'approved' | 'rejected'
+      decision_reason: string
+    },
+  ) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<RoadmapMovementRequest>(
+        `/roadmap/movement/requests/${requestId}/decision`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Roadmap movement decision failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function ceoMoveRoadmapPlanItem(
+    planItemId: number,
+    payload: {
+      proposed_start_date: string
+      proposed_end_date: string
+      reason: string
+      blocker: string
+    },
+  ) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<RoadmapMovementRequest>(
+        `/roadmap/plan/items/${planItemId}/ceo-move`,
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'CEO roadmap movement failed')
     } finally {
       setBusy(false)
     }
@@ -1923,6 +2118,7 @@ function App() {
     setLlmConfigs([])
     setGovernanceConfig(null)
     setUsers([])
+    setRoadmapMovementRequests([])
     setCustomRoles([])
     setRolePolicies([])
     setIntakeHistory([])
@@ -2191,7 +2387,14 @@ function App() {
           element={
             <RoadmapAgentPage
               roadmapPlanItems={roadmapPlanItems}
+              movementRequests={roadmapMovementRequests}
+              governanceConfig={governanceConfig}
+              currentUserRole={currentUser?.role || 'PM'}
               updateRoadmapPlanItem={updateRoadmapPlanItem}
+              setRoadmapGovernanceLock={setRoadmapGovernanceLock}
+              submitRoadmapMovementRequest={submitRoadmapMovementRequest}
+              decideRoadmapMovementRequest={decideRoadmapMovementRequest}
+              ceoMoveRoadmapPlanItem={ceoMoveRoadmapPlanItem}
               validateCapacity={validateCapacity}
               downloadRoadmapPlanExcel={downloadRoadmapPlanExcel}
               busy={busy}
@@ -2398,6 +2601,34 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
         <article className="metric-card">
           <p>Understanding Pending</p>
           <h2>{dashboard?.intake_understanding_pending ?? 0}</h2>
+        </article>
+        <article className="metric-card">
+          <p>Movement Pending</p>
+          <h2>{dashboard?.roadmap_movement_pending ?? 0}</h2>
+        </article>
+      </section>
+
+      <section className="card-grid two">
+        <article className="panel-card">
+          <h3>Roadmap Movement Governance</h3>
+          <div className="line-item">
+            <span className="muted">Total Movements</span>
+            <strong>{dashboard?.roadmap_movement_total ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Approved</span>
+            <strong>{dashboard?.roadmap_movement_approved ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Rejected</span>
+            <strong>{dashboard?.roadmap_movement_rejected ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Pending CEO Approval</span>
+            <strong className={(dashboard?.roadmap_movement_pending || 0) > 0 ? 'capacity-meter-state warn' : ''}>
+              {dashboard?.roadmap_movement_pending ?? 0}
+            </strong>
+          </div>
         </article>
       </section>
 
@@ -4442,6 +4673,9 @@ function RoadmapPage({
 
 type RoadmapAgentProps = {
   roadmapPlanItems: RoadmapPlanItem[]
+  movementRequests: RoadmapMovementRequest[]
+  governanceConfig: GovernanceConfig | null
+  currentUserRole: SystemRole
   updateRoadmapPlanItem: (
     itemId: number,
     payload: {
@@ -4452,6 +4686,33 @@ type RoadmapAgentProps = {
       planning_status: string
       confidence: string
       dependency_ids: number[]
+      change_reason?: string
+    },
+  ) => Promise<void>
+  setRoadmapGovernanceLock: (payload: { roadmap_locked: boolean; note: string }) => Promise<void>
+  submitRoadmapMovementRequest: (
+    planItemId: number,
+    payload: {
+      proposed_start_date: string
+      proposed_end_date: string
+      reason: string
+      blocker: string
+    },
+  ) => Promise<void>
+  decideRoadmapMovementRequest: (
+    requestId: number,
+    payload: {
+      decision: 'approved' | 'rejected'
+      decision_reason: string
+    },
+  ) => Promise<void>
+  ceoMoveRoadmapPlanItem: (
+    planItemId: number,
+    payload: {
+      proposed_start_date: string
+      proposed_end_date: string
+      reason: string
+      blocker: string
     },
   ) => Promise<void>
   validateCapacity: (payload: {
@@ -4477,7 +4738,14 @@ type RoadmapAgentProps = {
 
 function RoadmapAgentPage({
   roadmapPlanItems,
+  movementRequests,
+  governanceConfig,
+  currentUserRole,
   updateRoadmapPlanItem,
+  setRoadmapGovernanceLock,
+  submitRoadmapMovementRequest,
+  decideRoadmapMovementRequest,
+  ceoMoveRoadmapPlanItem,
   validateCapacity,
   downloadRoadmapPlanExcel,
   busy,
@@ -4495,12 +4763,25 @@ function RoadmapAgentPage({
   const [planCapacityValidation, setPlanCapacityValidation] = useState<CapacityValidationResult | null>(null)
   const [planCapacityBusy, setPlanCapacityBusy] = useState(false)
   const [planCapacityError, setPlanCapacityError] = useState('')
+  const [movementReason, setMovementReason] = useState('')
+  const [movementBlocker, setMovementBlocker] = useState('')
   const currentYear = new Date().getFullYear()
   const [yearView, setYearView] = useState(currentYear)
+  const roadmapLocked = Boolean(governanceConfig?.roadmap_locked)
+  const isCEO = currentUserRole === 'CEO'
+  const canRequestMovement = currentUserRole === 'VP' || currentUserRole === 'PM' || currentUserRole === 'PO'
 
   const selectedPlan = useMemo(
     () => roadmapPlanItems.find((x) => x.id === selectedPlanId) || null,
     [roadmapPlanItems, selectedPlanId],
+  )
+  const selectedPlanMovements = useMemo(
+    () => movementRequests.filter((x) => selectedPlanId != null && x.plan_item_id === selectedPlanId),
+    [movementRequests, selectedPlanId],
+  )
+  const pendingMovementRequests = useMemo(
+    () => movementRequests.filter((x) => x.status === 'pending'),
+    [movementRequests],
   )
 
   function quarterFromItem(item: RoadmapPlanItem): 'Q1' | 'Q2' | 'Q3' | 'Q4' | '' {
@@ -4540,6 +4821,11 @@ function RoadmapAgentPage({
     setPlanConfidence(selectedPlan.confidence || 'medium')
     setPlanDepsText((selectedPlan.dependency_ids || []).join(', '))
   }, [selectedPlan])
+
+  useEffect(() => {
+    setMovementReason('')
+    setMovementBlocker('')
+  }, [selectedPlanId])
 
   const computedDurationWeeks = useMemo(() => {
     if (planStart && planEnd) {
@@ -4663,6 +4949,39 @@ function RoadmapAgentPage({
       window.alert(planCapacityValidation.reason || 'Capacity exceeded. Please adjust dates or commitment FTE.')
       return
     }
+
+    if (roadmapLocked) {
+      const cleanReason = movementReason.trim()
+      if (cleanReason.length < 10) {
+        window.alert('Movement justification must be at least 10 characters.')
+        return
+      }
+      if (isCEO) {
+        await ceoMoveRoadmapPlanItem(selectedPlan.id, {
+          proposed_start_date: planStart,
+          proposed_end_date: planEnd,
+          reason: cleanReason,
+          blocker: movementBlocker.trim(),
+        })
+        setMovementReason('')
+        setMovementBlocker('')
+        return
+      }
+      if (canRequestMovement) {
+        await submitRoadmapMovementRequest(selectedPlan.id, {
+          proposed_start_date: planStart,
+          proposed_end_date: planEnd,
+          reason: cleanReason,
+          blocker: movementBlocker.trim(),
+        })
+        setMovementReason('')
+        setMovementBlocker('')
+        return
+      }
+      window.alert('Roadmap is locked. Only CEO can move dates directly.')
+      return
+    }
+
     const deps = planDepsText
       .split(',')
       .map((x) => Number(x.trim()))
@@ -4675,6 +4994,7 @@ function RoadmapAgentPage({
       planning_status: planStatus,
       confidence: planConfidence,
       dependency_ids: Array.from(new Set(deps)),
+      change_reason: movementReason.trim(),
     })
   }
 
@@ -4704,6 +5024,34 @@ function RoadmapAgentPage({
           </button>
         </div>
         <p className="muted">Plan committed items with dates and dependencies. Resources and effort are auto-derived from committed FTE.</p>
+        <div className="line-item">
+          <span className={roadmapLocked ? 'capacity-meter-state warn' : 'muted'}>
+            Governance lock: {roadmapLocked ? 'Enabled' : 'Disabled'}
+            {governanceConfig?.roadmap_locked_at ? ` (${fmtDateTime(governanceConfig.roadmap_locked_at)})` : ''}
+          </span>
+          {isCEO && (
+            <button
+              className="ghost-btn tiny"
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                const lockNext = !roadmapLocked
+                const note = window.prompt(
+                  lockNext
+                    ? 'Provide lock note (optional):'
+                    : 'Provide unlock note/justification (optional):',
+                  governanceConfig?.roadmap_lock_note || '',
+                ) ?? ''
+                await setRoadmapGovernanceLock({ roadmap_locked: lockNext, note })
+              }}
+            >
+              {roadmapLocked ? 'Unlock Governance' : 'Lock After CEO Review'}
+            </button>
+          )}
+        </div>
+        {governanceConfig?.roadmap_lock_note && (
+          <p className="muted">Lock note: {governanceConfig.roadmap_lock_note}</p>
+        )}
         <div className="planner-filters">
           <label className="planner-filter">
             <span>Year</span>
@@ -4867,6 +5215,34 @@ function RoadmapAgentPage({
               Dependencies (comma-separated roadmap plan IDs)
               <input value={planDepsText} onChange={(e) => setPlanDepsText(e.target.value)} placeholder="e.g. 4, 8, 12" />
             </label>
+            {roadmapLocked && (
+              <div className="inline-note warning">
+                <span>
+                  {isCEO
+                    ? 'Roadmap is locked. CEO can move timeline only with justification.'
+                    : canRequestMovement
+                      ? 'Roadmap is locked. Submit movement request for CEO approval.'
+                      : 'Roadmap is locked. Only CEO can move timeline.'}
+                </span>
+              </div>
+            )}
+            <label>
+              {roadmapLocked && isCEO ? 'CEO Justification for Movement' : 'Movement Reason / Blocker Justification'}
+              <textarea
+                rows={3}
+                value={movementReason}
+                onChange={(e) => setMovementReason(e.target.value)}
+                placeholder="Explain why this roadmap movement is needed (priority shift, blocker, dependency, client escalation, etc.)"
+              />
+            </label>
+            <label>
+              Blocker / Trigger (optional)
+              <input
+                value={movementBlocker}
+                onChange={(e) => setMovementBlocker(e.target.value)}
+                placeholder="e.g. high priority client escalation, dependency delay, environment blocker"
+              />
+            </label>
             <button
               className="primary-btn"
               type="button"
@@ -4876,16 +5252,135 @@ function RoadmapAgentPage({
                 !planEnd ||
                 !!planCapacityError ||
                 planCapacityBusy ||
-                planCapacityValidation?.status === 'REJECTED'
+                planCapacityValidation?.status === 'REJECTED' ||
+                (roadmapLocked && movementReason.trim().length < 10) ||
+                (roadmapLocked && !isCEO && !canRequestMovement)
               }
               onClick={savePlan}
             >
-              Save Plan
+              {roadmapLocked
+                ? isCEO
+                  ? 'Apply CEO Movement'
+                  : canRequestMovement
+                    ? 'Submit Movement Request'
+                    : 'Roadmap Locked'
+                : 'Save Plan'}
             </button>
           </div>
         ) : (
           <p className="muted">Select a bar in Gantt to plan dates/resources/dependencies.</p>
         )}
+      </section>
+
+      <section className="panel-card planner-section">
+        <h3>Roadmap Movement Workflow</h3>
+        <p className="muted">
+          VP/PM submit movement requests while roadmap lock is active. CEO approves/rejects with decision reason. All movement events are retained for audit and chatbot retrieval.
+        </p>
+        {isCEO && (
+          <div className="stack">
+            <strong>Pending CEO Approvals: {pendingMovementRequests.length}</strong>
+            {pendingMovementRequests.length === 0 ? (
+              <p className="muted">No pending movement requests.</p>
+            ) : (
+              <table className="docs-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Plan</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Reason</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pendingMovementRequests.map((req) => (
+                    <tr key={req.id}>
+                      <td>{req.id}</td>
+                      <td>{req.plan_item_id}</td>
+                      <td>{req.from_start_date || '-'} → {req.from_end_date || '-'}</td>
+                      <td>{req.to_start_date} → {req.to_end_date}</td>
+                      <td>{req.reason}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            className="ghost-btn tiny"
+                            type="button"
+                            disabled={busy}
+                            onClick={async () => {
+                              const note = window.prompt('Approval note (required):', 'Approved by CEO after review')
+                              if (!note || note.trim().length < 3) return
+                              await decideRoadmapMovementRequest(req.id, {
+                                decision: 'approved',
+                                decision_reason: note.trim(),
+                              })
+                            }}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            className="ghost-btn tiny"
+                            type="button"
+                            disabled={busy}
+                            onClick={async () => {
+                              const note = window.prompt('Rejection reason (required):', 'Rejected: insufficient business justification')
+                              if (!note || note.trim().length < 3) return
+                              await decideRoadmapMovementRequest(req.id, {
+                                decision: 'rejected',
+                                decision_reason: note.trim(),
+                              })
+                            }}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+
+        <div className="stack">
+          <strong>Selected Plan Movement History</strong>
+          {!selectedPlan ? (
+            <p className="muted">Select a roadmap bar to view movement history.</p>
+          ) : selectedPlanMovements.length === 0 ? (
+            <p className="muted">No movement history for this plan item.</p>
+          ) : (
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Request ID</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>From</th>
+                  <th>To</th>
+                  <th>Reason</th>
+                  <th>Decision Note</th>
+                  <th>Requested</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedPlanMovements.map((req) => (
+                  <tr key={req.id}>
+                    <td>{req.id}</td>
+                    <td>{req.request_type}</td>
+                    <td>{req.status}</td>
+                    <td>{req.from_start_date || '-'} → {req.from_end_date || '-'}</td>
+                    <td>{req.to_start_date} → {req.to_end_date}</td>
+                    <td>{req.reason}</td>
+                    <td>{req.decision_reason || '-'}</td>
+                    <td>{fmtDateTime(req.requested_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </section>
     </main>
   )

@@ -47,6 +47,10 @@ class GovernanceOut(BaseModel):
     efficiency_confirmed_ceo_by: int | None = None
     efficiency_confirmed_vp_at: datetime | None = None
     efficiency_confirmed_vp_by: int | None = None
+    roadmap_locked: bool = False
+    roadmap_locked_at: datetime | None = None
+    roadmap_locked_by: int | None = None
+    roadmap_lock_note: str = ""
 
     model_config = {"from_attributes": True}
 

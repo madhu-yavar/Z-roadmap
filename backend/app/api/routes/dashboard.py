@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user
 from app.db.session import get_db
 from app.models.intake_item import IntakeItem
+from app.models.roadmap_movement_request import RoadmapMovementRequest
 from app.models.roadmap_item import RoadmapItem
 from app.models.roadmap_plan_item import RoadmapPlanItem
 from app.schemas.dashboard import DashboardOut
@@ -37,6 +38,10 @@ def get_dashboard_summary(db: Session = Depends(get_db), _=Depends(get_current_u
     commitments_ready = db.query(func.count(RoadmapItem.id)).filter(RoadmapItem.picked_up.is_(True)).scalar() or 0
     commitments_locked = db.query(func.count(RoadmapPlanItem.id)).scalar() or 0
     roadmap_total = commitments_locked
+    roadmap_movement_pending = db.query(func.count(RoadmapMovementRequest.id)).filter(RoadmapMovementRequest.status == "pending").scalar() or 0
+    roadmap_movement_approved = db.query(func.count(RoadmapMovementRequest.id)).filter(RoadmapMovementRequest.status == "approved").scalar() or 0
+    roadmap_movement_rejected = db.query(func.count(RoadmapMovementRequest.id)).filter(RoadmapMovementRequest.status == "rejected").scalar() or 0
+    roadmap_movement_total = db.query(func.count(RoadmapMovementRequest.id)).scalar() or 0
 
     intake_context_rows = (
         db.query(IntakeItem.project_context, func.count(IntakeItem.id))
@@ -82,6 +87,10 @@ def get_dashboard_summary(db: Session = Depends(get_db), _=Depends(get_current_u
         commitments_ready=int(commitments_ready),
         commitments_locked=int(commitments_locked),
         roadmap_total=int(roadmap_total),
+        roadmap_movement_pending=int(roadmap_movement_pending),
+        roadmap_movement_approved=int(roadmap_movement_approved),
+        roadmap_movement_rejected=int(roadmap_movement_rejected),
+        roadmap_movement_total=int(roadmap_movement_total),
         intake_by_context=_to_dict(intake_context_rows),
         commitments_by_context=_to_dict(commitments_context_rows),
         roadmap_by_context=_to_dict(roadmap_context_rows),

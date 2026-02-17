@@ -14,6 +14,7 @@ from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.governance_config import GovernanceConfig
 from app.models.intake_item import IntakeItem
+from app.models.roadmap_movement_request import RoadmapMovementRequest
 from app.models.roadmap_plan_item import RoadmapPlanItem
 from app.models.roadmap_item import RoadmapItem
 from app.models.roadmap_redundancy_decision import RoadmapRedundancyDecision
@@ -28,8 +29,14 @@ from app.schemas.roadmap import (
     RoadmapItemUpdateIn,
     RoadmapMoveIn,
     RoadmapMoveOut,
+    RoadmapMovementCEOIn,
+    RoadmapMovementDecisionIn,
+    RoadmapMovementRequestIn,
+    RoadmapMovementRequestOut,
     RoadmapPlanOut,
     RoadmapPlanUpdateIn,
+    RoadmapGovernanceLockIn,
+    RoadmapGovernanceLockOut,
     RoadmapRedundancyDecisionIn,
     RoadmapRedundancyDecisionOut,
     RoadmapRedundancyOut,
@@ -158,6 +165,60 @@ def _parse_plan_dates(start_date: str, end_date: str) -> tuple[datetime, datetim
     if end < start:
         return None
     return start, end
+
+
+def _get_or_create_governance(db: Session) -> GovernanceConfig:
+    cfg = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
+    if cfg:
+        return cfg
+    cfg = GovernanceConfig()
+    db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return cfg
+
+
+def _is_roadmap_locked(cfg: GovernanceConfig) -> bool:
+    return bool(cfg.roadmap_locked)
+
+
+def _parse_or_raise_plan_dates(start_date: str, end_date: str) -> tuple[str, str, int]:
+    start = start_date.strip()
+    end = end_date.strip()
+    if not start or not end:
+        raise HTTPException(status_code=400, detail="Planned start and end dates are required.")
+    try:
+        duration = _duration_weeks_from_dates(start, end)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid planned start/end date format. Use YYYY-MM-DD.")
+    return start, end, duration
+
+
+def _apply_plan_schedule(
+    item: RoadmapPlanItem,
+    start_date: str,
+    end_date: str,
+    duration_weeks: int,
+    planning_status: str,
+    confidence: str,
+    dependency_ids: list[int],
+) -> None:
+    total_fte = (
+        _safe_non_negative(item.fe_fte)
+        + _safe_non_negative(item.be_fte)
+        + _safe_non_negative(item.ai_fte)
+        + _safe_non_negative(item.pm_fte)
+    )
+    item.planned_start_date = start_date
+    item.planned_end_date = end_date
+    item.tentative_duration_weeks = duration_weeks
+    item.resource_count = math.ceil(total_fte) if total_fte > 0 else 0
+    item.effort_person_weeks = math.ceil(total_fte * duration_weeks) if total_fte > 0 else 0
+    item.planning_status = planning_status.strip().lower()
+    item.confidence = confidence.strip().lower()
+    item.dependency_ids = sorted(set(dependency_ids))
 
 
 def _current_usage_weekly(
@@ -642,6 +703,66 @@ def list_roadmap_plan_items(db: Session = Depends(get_db), _=Depends(get_current
     return db.query(RoadmapPlanItem).order_by(RoadmapPlanItem.id.desc()).all()
 
 
+@router.get("/governance-lock", response_model=RoadmapGovernanceLockOut)
+def get_roadmap_governance_lock(
+    db: Session = Depends(get_db),
+    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.PM, UserRole.BA)),
+):
+    cfg = _get_or_create_governance(db)
+    return RoadmapGovernanceLockOut(
+        roadmap_locked=bool(cfg.roadmap_locked),
+        roadmap_locked_at=cfg.roadmap_locked_at,
+        roadmap_locked_by=cfg.roadmap_locked_by,
+        roadmap_lock_note=cfg.roadmap_lock_note or "",
+    )
+
+
+@router.post("/governance-lock", response_model=RoadmapGovernanceLockOut)
+def update_roadmap_governance_lock(
+    payload: RoadmapGovernanceLockIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO)),
+):
+    cfg = _get_or_create_governance(db)
+    now_utc = datetime.utcnow()
+    cfg.roadmap_locked = bool(payload.roadmap_locked)
+    if cfg.roadmap_locked:
+        cfg.roadmap_locked_at = now_utc
+        cfg.roadmap_locked_by = current_user.id
+        cfg.roadmap_lock_note = payload.note.strip()
+    else:
+        cfg.roadmap_locked_at = None
+        cfg.roadmap_locked_by = None
+        cfg.roadmap_lock_note = payload.note.strip()
+    cfg.updated_by = current_user.id
+    db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return RoadmapGovernanceLockOut(
+        roadmap_locked=bool(cfg.roadmap_locked),
+        roadmap_locked_at=cfg.roadmap_locked_at,
+        roadmap_locked_by=cfg.roadmap_locked_by,
+        roadmap_lock_note=cfg.roadmap_lock_note or "",
+    )
+
+
+@router.get("/movement/requests", response_model=list[RoadmapMovementRequestOut])
+def list_roadmap_movement_requests(
+    status: str = Query(default="all"),
+    plan_item_id: int | None = Query(default=None, ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.PM, UserRole.BA)),
+):
+    query = db.query(RoadmapMovementRequest)
+    if status.lower() != "all":
+        query = query.filter(RoadmapMovementRequest.status == status.strip().lower())
+    if plan_item_id is not None:
+        query = query.filter(RoadmapMovementRequest.plan_item_id == plan_item_id)
+    if current_user.role in {UserRole.VP, UserRole.PM, UserRole.PO}:
+        query = query.filter(RoadmapMovementRequest.requested_by == current_user.id)
+    return query.order_by(RoadmapMovementRequest.id.desc()).all()
+
+
 @router.get("/plan/export")
 def export_roadmap_plan_excel(
     year: int = Query(default=datetime.utcnow().year, ge=2020, le=2100),
@@ -763,28 +884,27 @@ def update_roadmap_plan_item(
     item_id: int,
     payload: RoadmapPlanUpdateIn,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
     item = db.get(RoadmapPlanItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap plan item not found")
 
-    start_date = payload.planned_start_date.strip()
-    end_date = payload.planned_end_date.strip()
-    if not start_date or not end_date:
-        raise HTTPException(status_code=400, detail="Planned start and end dates are required.")
-    try:
-        duration_weeks = _duration_weeks_from_dates(start_date, end_date)
-    except ValueError as err:
-        raise HTTPException(status_code=400, detail=str(err))
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid planned start/end date format. Use YYYY-MM-DD.")
+    start_date, end_date, duration_weeks = _parse_or_raise_plan_dates(
+        payload.planned_start_date,
+        payload.planned_end_date,
+    )
 
-    governance = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
+    governance = _get_or_create_governance(db)
     if not governance:
         raise HTTPException(status_code=409, detail="Governance configuration missing. CEO/VP must configure capacity first.")
     if governance.quota_client + governance.quota_internal <= 0:
         raise HTTPException(status_code=409, detail="Portfolio quotas are zero. Update governance quotas before planning.")
+    if _is_roadmap_locked(governance):
+        raise HTTPException(
+            status_code=423,
+            detail="Roadmap is CEO-locked. VP/PM must submit movement request, and CEO can apply movement with justification.",
+        )
 
     requested = {
         "fe": _safe_non_negative(item.fe_fte),
@@ -804,20 +924,214 @@ def update_roadmap_plan_item(
     if status != "APPROVED":
         raise HTTPException(status_code=409, detail=reason)
 
-    total_fte = sum(requested.values())
-    item.planned_start_date = start_date
-    item.planned_end_date = end_date
-    item.tentative_duration_weeks = duration_weeks
-    item.resource_count = math.ceil(total_fte) if total_fte > 0 else 0
-    item.effort_person_weeks = math.ceil(total_fte * duration_weeks) if total_fte > 0 else 0
-    item.planning_status = payload.planning_status.strip().lower()
-    item.confidence = payload.confidence.strip().lower()
-    item.dependency_ids = sorted(set(payload.dependency_ids))
+    _apply_plan_schedule(
+        item=item,
+        start_date=start_date,
+        end_date=end_date,
+        duration_weeks=duration_weeks,
+        planning_status=payload.planning_status,
+        confidence=payload.confidence,
+        dependency_ids=payload.dependency_ids,
+    )
 
     db.add(item)
     db.commit()
     db.refresh(item)
     return item
+
+
+@router.post("/plan/items/{item_id}/movement-request", response_model=RoadmapMovementRequestOut)
+def create_roadmap_movement_request(
+    item_id: int,
+    payload: RoadmapMovementRequestIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.VP, UserRole.PM)),
+):
+    item = db.get(RoadmapPlanItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Roadmap plan item not found")
+
+    governance = _get_or_create_governance(db)
+    if not _is_roadmap_locked(governance):
+        raise HTTPException(status_code=409, detail="Roadmap is not locked. Update dates directly in roadmap planner.")
+
+    start_date, end_date, _ = _parse_or_raise_plan_dates(payload.proposed_start_date, payload.proposed_end_date)
+    reason = payload.reason.strip()
+    if len(reason) < 10:
+        raise HTTPException(status_code=400, detail="Movement reason must be at least 10 characters.")
+    if start_date == (item.planned_start_date or "") and end_date == (item.planned_end_date or ""):
+        raise HTTPException(status_code=400, detail="Proposed dates are same as current plan dates.")
+
+    request = RoadmapMovementRequest(
+        plan_item_id=item.id,
+        bucket_item_id=item.bucket_item_id,
+        request_type="request",
+        status="pending",
+        from_start_date=item.planned_start_date or "",
+        from_end_date=item.planned_end_date or "",
+        to_start_date=start_date,
+        to_end_date=end_date,
+        reason=reason,
+        blocker=payload.blocker.strip(),
+        requested_by=current_user.id,
+        requested_at=datetime.utcnow(),
+    )
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+@router.post("/movement/requests/{request_id}/decision", response_model=RoadmapMovementRequestOut)
+def decide_roadmap_movement_request(
+    request_id: int,
+    payload: RoadmapMovementDecisionIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO)),
+):
+    request = db.get(RoadmapMovementRequest, request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Movement request not found")
+    if request.status != "pending":
+        raise HTTPException(status_code=409, detail="Movement request is already decided.")
+
+    governance = _get_or_create_governance(db)
+    if not _is_roadmap_locked(governance):
+        raise HTTPException(status_code=409, detail="Roadmap is not locked. CEO can directly update plan dates.")
+
+    decision = payload.decision.strip().lower()
+    if decision not in {"approved", "rejected"}:
+        raise HTTPException(status_code=400, detail="Decision must be approved or rejected.")
+
+    request.decision_reason = payload.decision_reason.strip()
+    request.decided_by = current_user.id
+    request.decided_at = datetime.utcnow()
+    request.status = decision
+
+    if decision == "approved":
+        item = db.get(RoadmapPlanItem, request.plan_item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Roadmap plan item no longer exists.")
+
+        start_date, end_date, duration_weeks = _parse_or_raise_plan_dates(request.to_start_date, request.to_end_date)
+        status, _, _, reason = _capacity_validate_timeline(
+            db=db,
+            governance=governance,
+            portfolio=_norm_portfolio(item.project_context),
+            proposed={
+                "fe": _safe_non_negative(item.fe_fte),
+                "be": _safe_non_negative(item.be_fte),
+                "ai": _safe_non_negative(item.ai_fte),
+                "pm": _safe_non_negative(item.pm_fte),
+            },
+            planned_start_date=start_date,
+            planned_end_date=end_date,
+            exclude_bucket_item_id=item.bucket_item_id,
+        )
+        if status != "APPROVED":
+            request.status = "rejected"
+            request.decision_reason = (
+                f"{request.decision_reason + ' | ' if request.decision_reason else ''}"
+                f"Auto-rejected: {reason}"
+            )
+            db.add(request)
+            db.commit()
+            db.refresh(request)
+            return request
+
+        _apply_plan_schedule(
+            item=item,
+            start_date=start_date,
+            end_date=end_date,
+            duration_weeks=duration_weeks,
+            planning_status=item.planning_status,
+            confidence=item.confidence,
+            dependency_ids=item.dependency_ids or [],
+        )
+        request.executed_at = datetime.utcnow()
+        db.add(item)
+
+    db.add(request)
+    db.commit()
+    db.refresh(request)
+    return request
+
+
+@router.post("/plan/items/{item_id}/ceo-move", response_model=RoadmapMovementRequestOut)
+def ceo_move_roadmap_plan_item(
+    item_id: int,
+    payload: RoadmapMovementCEOIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO)),
+):
+    item = db.get(RoadmapPlanItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Roadmap plan item not found")
+
+    governance = _get_or_create_governance(db)
+    if not _is_roadmap_locked(governance):
+        raise HTTPException(status_code=409, detail="Roadmap is not locked. Update dates directly in roadmap planner.")
+
+    start_date, end_date, duration_weeks = _parse_or_raise_plan_dates(payload.proposed_start_date, payload.proposed_end_date)
+    reason = payload.reason.strip()
+    if len(reason) < 10:
+        raise HTTPException(status_code=400, detail="CEO movement justification must be at least 10 characters.")
+    if start_date == (item.planned_start_date or "") and end_date == (item.planned_end_date or ""):
+        raise HTTPException(status_code=400, detail="Proposed dates are same as current plan dates.")
+
+    status, _, _, capacity_reason = _capacity_validate_timeline(
+        db=db,
+        governance=governance,
+        portfolio=_norm_portfolio(item.project_context),
+        proposed={
+            "fe": _safe_non_negative(item.fe_fte),
+            "be": _safe_non_negative(item.be_fte),
+            "ai": _safe_non_negative(item.ai_fte),
+            "pm": _safe_non_negative(item.pm_fte),
+        },
+        planned_start_date=start_date,
+        planned_end_date=end_date,
+        exclude_bucket_item_id=item.bucket_item_id,
+    )
+    if status != "APPROVED":
+        raise HTTPException(status_code=409, detail=capacity_reason)
+
+    from_start = item.planned_start_date or ""
+    from_end = item.planned_end_date or ""
+    _apply_plan_schedule(
+        item=item,
+        start_date=start_date,
+        end_date=end_date,
+        duration_weeks=duration_weeks,
+        planning_status=item.planning_status,
+        confidence=item.confidence,
+        dependency_ids=item.dependency_ids or [],
+    )
+
+    now_utc = datetime.utcnow()
+    movement = RoadmapMovementRequest(
+        plan_item_id=item.id,
+        bucket_item_id=item.bucket_item_id,
+        request_type="ceo_direct",
+        status="approved",
+        from_start_date=from_start,
+        from_end_date=from_end,
+        to_start_date=start_date,
+        to_end_date=end_date,
+        reason=reason,
+        blocker=payload.blocker.strip(),
+        decision_reason="CEO direct movement",
+        requested_by=current_user.id,
+        decided_by=current_user.id,
+        requested_at=now_utc,
+        decided_at=now_utc,
+        executed_at=now_utc,
+    )
+    db.add(item)
+    db.add(movement)
+    db.commit()
+    db.refresh(movement)
+    return movement
 
 
 @router.patch("/items/{item_id}", response_model=RoadmapItemOut)
@@ -882,6 +1196,13 @@ def unlock_roadmap_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
 ):
+    governance = _get_or_create_governance(db)
+    if _is_roadmap_locked(governance):
+        raise HTTPException(
+            status_code=423,
+            detail="Roadmap governance lock is active. Use CEO movement workflow instead of unlock.",
+        )
+
     item = db.get(RoadmapItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap item not found")
@@ -1028,6 +1349,8 @@ def move_bucket_items_to_roadmap(
     governance = db.query(GovernanceConfig).order_by(GovernanceConfig.id.asc()).first()
     if not governance:
         raise HTTPException(status_code=409, detail="Governance configuration missing. CEO/VP must configure capacity first.")
+    if _is_roadmap_locked(governance):
+        raise HTTPException(status_code=423, detail="Roadmap governance lock is active. Unlock governance to commit new roadmap items.")
     if governance.quota_client + governance.quota_internal <= 0:
         raise HTTPException(status_code=409, detail="Portfolio quotas are zero. Update governance quotas before commit.")
 

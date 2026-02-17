@@ -9,6 +9,7 @@ from app.db.base import Base
 from app.db.session import engine
 from app.models.custom_role import CustomRole  # noqa: F401
 from app.models.enums import UserRole
+from app.models.roadmap_movement_request import RoadmapMovementRequest  # noqa: F401
 from app.models.user import User
 from sqlalchemy.orm import Session
 
@@ -101,10 +102,45 @@ def _ensure_compat_columns() -> None:
             team_locked_by INTEGER REFERENCES users(id),
             quota_locked_until TIMESTAMP,
             quota_locked_by INTEGER REFERENCES users(id),
+            efficiency_confirmed_ceo_at TIMESTAMP,
+            efficiency_confirmed_ceo_by INTEGER,
+            efficiency_confirmed_vp_at TIMESTAMP,
+            efficiency_confirmed_vp_by INTEGER,
+            roadmap_locked BOOLEAN NOT NULL DEFAULT FALSE,
+            roadmap_locked_at TIMESTAMP,
+            roadmap_locked_by INTEGER REFERENCES users(id),
+            roadmap_lock_note VARCHAR(2000) NOT NULL DEFAULT '',
             updated_by INTEGER REFERENCES users(id),
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS roadmap_movement_requests (
+            id SERIAL PRIMARY KEY,
+            plan_item_id INTEGER NOT NULL REFERENCES roadmap_plan_items(id),
+            bucket_item_id INTEGER NOT NULL REFERENCES roadmap_items(id),
+            request_type VARCHAR(24) NOT NULL DEFAULT 'request',
+            status VARCHAR(24) NOT NULL DEFAULT 'pending',
+            from_start_date VARCHAR(20) NOT NULL DEFAULT '',
+            from_end_date VARCHAR(20) NOT NULL DEFAULT '',
+            to_start_date VARCHAR(20) NOT NULL DEFAULT '',
+            to_end_date VARCHAR(20) NOT NULL DEFAULT '',
+            reason TEXT NOT NULL DEFAULT '',
+            blocker VARCHAR(255) NOT NULL DEFAULT '',
+            decision_reason TEXT NOT NULL DEFAULT '',
+            requested_by INTEGER REFERENCES users(id),
+            decided_by INTEGER REFERENCES users(id),
+            requested_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            decided_at TIMESTAMP,
+            executed_at TIMESTAMP,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_move_requests_plan_item_id ON roadmap_movement_requests (plan_item_id)",
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_move_requests_bucket_item_id ON roadmap_movement_requests (bucket_item_id)",
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_move_requests_status ON roadmap_movement_requests (status)",
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_move_requests_requested_by ON roadmap_movement_requests (requested_by)",
         """
         CREATE TABLE IF NOT EXISTS custom_roles (
             id SERIAL PRIMARY KEY,
@@ -137,6 +173,10 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_ceo_by INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_vp_at TIMESTAMP",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_vp_by INTEGER",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_locked BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_locked_at TIMESTAMP",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_locked_by INTEGER",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_lock_note VARCHAR(2000) NOT NULL DEFAULT ''",
     ]
     with engine.begin() as conn:
         for stmt in statements:

@@ -115,6 +115,7 @@ class RoadmapPlanUpdateIn(BaseModel):
     planning_status: str = "not_started"
     confidence: str = "medium"
     dependency_ids: list[int] = []
+    change_reason: str = ""
 
 
 class CapacityValidateIn(BaseModel):
@@ -134,6 +135,61 @@ class CapacityValidateOut(BaseModel):
     breach_roles: list[str]
     utilization_percentage: dict[str, str]
     reason: str
+
+
+class RoadmapGovernanceLockIn(BaseModel):
+    roadmap_locked: bool
+    note: str = ""
+
+
+class RoadmapGovernanceLockOut(BaseModel):
+    roadmap_locked: bool
+    roadmap_locked_at: datetime | None = None
+    roadmap_locked_by: int | None = None
+    roadmap_lock_note: str = ""
+
+
+class RoadmapMovementRequestIn(BaseModel):
+    proposed_start_date: str
+    proposed_end_date: str
+    reason: str
+    blocker: str = ""
+
+
+class RoadmapMovementDecisionIn(BaseModel):
+    decision: str
+    decision_reason: str = ""
+
+
+class RoadmapMovementCEOIn(BaseModel):
+    proposed_start_date: str
+    proposed_end_date: str
+    reason: str
+    blocker: str = ""
+
+
+class RoadmapMovementRequestOut(BaseModel):
+    id: int
+    plan_item_id: int
+    bucket_item_id: int
+    request_type: str
+    status: str
+    from_start_date: str
+    from_end_date: str
+    to_start_date: str
+    to_end_date: str
+    reason: str
+    blocker: str
+    decision_reason: str
+    requested_by: int | None
+    decided_by: int | None
+    requested_at: datetime
+    decided_at: datetime | None = None
+    executed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class RedundancyMatchOut(BaseModel):
