@@ -1,4 +1,5 @@
 from app.models.document import Document
+from app.models.custom_role import CustomRole
 from app.models.feature import Feature
 from app.models.governance_config import GovernanceConfig
 from app.models.intake_analysis import IntakeAnalysis
@@ -16,6 +17,7 @@ __all__ = [
     "Project",
     "Feature",
     "Document",
+    "CustomRole",
     "GovernanceConfig",
     "IntakeAnalysis",
     "IntakeItem",

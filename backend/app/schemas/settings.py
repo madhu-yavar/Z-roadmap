@@ -43,6 +43,10 @@ class GovernanceOut(BaseModel):
     team_locked_by: int | None = None
     quota_locked_until: datetime | None = None
     quota_locked_by: int | None = None
+    efficiency_confirmed_ceo_at: datetime | None = None
+    efficiency_confirmed_ceo_by: int | None = None
+    efficiency_confirmed_vp_at: datetime | None = None
+    efficiency_confirmed_vp_by: int | None = None
 
     model_config = {"from_attributes": True}
 

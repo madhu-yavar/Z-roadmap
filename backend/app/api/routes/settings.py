@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.api.deps import require_roles
+from app.api.deps import ensure_custom_role_permission, require_roles
 from app.db.session import get_db
 from app.models.enums import UserRole
 from app.models.governance_config import GovernanceConfig
@@ -58,8 +58,9 @@ def _is_locked(locked_until: datetime | None) -> bool:
 @router.get("/llm", response_model=list[LLMConfigOut])
 def list_llm_configs(
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
+    ensure_custom_role_permission(current_user, "can_manage_settings", "manage AI provider settings")
     return db.query(LLMConfig).order_by(LLMConfig.id.desc()).all()
 
 
@@ -67,8 +68,9 @@ def list_llm_configs(
 def set_active_llm(
     payload: LLMConfigIn,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
+    ensure_custom_role_permission(current_user, "can_manage_settings", "manage AI provider settings")
     db.query(LLMConfig).update({"is_active": False})
 
     config = LLMConfig(
@@ -87,8 +89,9 @@ def set_active_llm(
 @router.post("/llm/test", response_model=LLMTestOut)
 def test_llm(
     payload: LLMConfigIn,
-    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
+    ensure_custom_role_permission(current_user, "can_manage_settings", "manage AI provider settings")
     ok, message = test_llm_connection(
         provider=payload.provider.strip().lower(),
         model=payload.model.strip(),
@@ -117,6 +120,7 @@ def update_governance_team_config(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO)),
 ):
+    ensure_custom_role_permission(current_user, "can_configure_team_capacity", "update team capacity")
     cfg = _get_or_create_governance(db)
     if _is_locked(cfg.team_locked_until):
         raise HTTPException(
@@ -144,8 +148,11 @@ def update_governance_team_config(
     cfg.efficiency_be = payload.efficiency_be
     cfg.efficiency_ai = payload.efficiency_ai
     cfg.efficiency_pm = payload.efficiency_pm
-    cfg.team_locked_until = datetime.utcnow() + timedelta(hours=LOCK_WINDOW_HOURS)
+    now_utc = datetime.utcnow()
+    cfg.team_locked_until = now_utc + timedelta(hours=LOCK_WINDOW_HOURS)
     cfg.team_locked_by = current_user.id
+    cfg.efficiency_confirmed_ceo_at = now_utc
+    cfg.efficiency_confirmed_ceo_by = current_user.id
     cfg.updated_by = current_user.id
     db.add(cfg)
     db.commit()
@@ -159,6 +166,7 @@ def update_governance_quotas(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
 ):
+    ensure_custom_role_permission(current_user, "can_allocate_portfolio_quotas", "update portfolio quotas")
     cfg = _get_or_create_governance(db)
     if _is_locked(cfg.quota_locked_until):
         raise HTTPException(
@@ -174,6 +182,27 @@ def update_governance_quotas(
     cfg.quota_internal = payload.quota_internal
     cfg.quota_locked_until = datetime.utcnow() + timedelta(hours=LOCK_WINDOW_HOURS)
     cfg.quota_locked_by = current_user.id
+    cfg.updated_by = current_user.id
+    db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return cfg
+
+
+@router.post("/governance/efficiency-confirmation", response_model=GovernanceOut)
+def confirm_governance_efficiency(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
+):
+    ensure_custom_role_permission(current_user, "can_manage_settings", "confirm monthly efficiency baseline")
+    cfg = _get_or_create_governance(db)
+    now_utc = datetime.utcnow()
+    if current_user.role == UserRole.CEO:
+        cfg.efficiency_confirmed_ceo_at = now_utc
+        cfg.efficiency_confirmed_ceo_by = current_user.id
+    elif current_user.role == UserRole.VP:
+        cfg.efficiency_confirmed_vp_at = now_utc
+        cfg.efficiency_confirmed_vp_by = current_user.id
     cfg.updated_by = current_user.id
     db.add(cfg)
     db.commit()

@@ -222,24 +222,37 @@ def _capacity_validate(
             usage_pw[existing_portfolio]["pm"] -= _safe_non_negative(existing.pm_fte) * existing_duration
 
     breach_roles: list[str] = []
+    no_capacity_roles: list[str] = []
     utilization: dict[str, str] = {}
     for role in ROLE_KEYS:
         cap_pw = _capacity_limit_pw(governance, portfolio, role)
         next_pw = usage_pw[portfolio][role] + _safe_non_negative(proposed.get(role, 0.0)) * duration_weeks
         if cap_pw <= 0:
-            util_pct = 0.0 if next_pw <= 0 else 999.0
+            if next_pw <= 0:
+                utilization[role.upper()] = "0.0%"
+            else:
+                utilization[role.upper()] = "N/A"
+                breach_roles.append(role.upper())
+                no_capacity_roles.append(role.upper())
         else:
             util_pct = (next_pw / cap_pw) * 100.0
-        utilization[role.upper()] = f"{util_pct:.1f}%"
-        if util_pct > 100.0 + 1e-9:
-            breach_roles.append(role.upper())
+            utilization[role.upper()] = f"{util_pct:.1f}%"
+            if util_pct > 100.0 + 1e-9:
+                breach_roles.append(role.upper())
 
     if breach_roles:
+        exceeded_roles = [role for role in breach_roles if role not in no_capacity_roles]
+        reason_parts: list[str] = []
+        if exceeded_roles:
+            reason_parts.append(f"Capacity exceeded for roles: {', '.join(exceeded_roles)}")
+        if no_capacity_roles:
+            reason_parts.append(f"No configured capacity for roles: {', '.join(no_capacity_roles)}")
+        reason = "; ".join(reason_parts) + f" in {portfolio} portfolio."
         return (
             "REJECTED",
             breach_roles,
             utilization,
-            f"Capacity exceeded for roles: {', '.join(breach_roles)} in {portfolio} portfolio.",
+            reason,
         )
     return (
         "APPROVED",
@@ -271,30 +284,48 @@ def _capacity_validate_timeline(
     usage_weekly = _current_usage_weekly(db, exclude_bucket_item_id=exclude_bucket_item_id)
 
     breach_roles: list[str] = []
+    no_capacity_roles: list[str] = []
     breach_weeks: dict[str, str] = {}
     peak_utilization: dict[str, float] = {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0}
+    no_capacity_breach: dict[str, bool] = {"fe": False, "be": False, "ai": False, "pm": False}
     for wk in week_keys:
         existing = usage_weekly[portfolio].get(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0})
         for role in ROLE_KEYS:
             cap_weekly = _capacity_limit_weekly(governance, portfolio, role)
             next_fte = existing[role] + _safe_non_negative(proposed.get(role, 0.0))
             if cap_weekly <= 0:
-                util_pct = 0.0 if next_fte <= 0 else 999.0
+                if next_fte > 0:
+                    no_capacity_breach[role] = True
+                    if role.upper() not in breach_roles:
+                        breach_roles.append(role.upper())
+                        breach_weeks[role.upper()] = wk
+                    if role.upper() not in no_capacity_roles:
+                        no_capacity_roles.append(role.upper())
             else:
                 util_pct = (next_fte / cap_weekly) * 100.0
-            peak_utilization[role] = max(peak_utilization[role], util_pct)
-            if util_pct > 100.0 + 1e-9 and role.upper() not in breach_roles:
-                breach_roles.append(role.upper())
-                breach_weeks[role.upper()] = wk
+                peak_utilization[role] = max(peak_utilization[role], util_pct)
+                if util_pct > 100.0 + 1e-9 and role.upper() not in breach_roles:
+                    breach_roles.append(role.upper())
+                    breach_weeks[role.upper()] = wk
 
-    utilization = {role.upper(): f"{peak_utilization[role]:.1f}%" for role in ROLE_KEYS}
+    utilization = {
+        role.upper(): ("N/A" if no_capacity_breach[role] else f"{peak_utilization[role]:.1f}%")
+        for role in ROLE_KEYS
+    }
     if breach_roles:
-        breach_detail = ", ".join(f"{r} ({breach_weeks.get(r, '-')})" for r in breach_roles)
+        exceeded_roles = [role for role in breach_roles if role not in no_capacity_roles]
+        breach_detail = ", ".join(f"{r} ({breach_weeks.get(r, '-')})" for r in exceeded_roles)
+        reason_parts: list[str] = []
+        if breach_detail:
+            reason_parts.append(f"Timeline overlap exceeds weekly capacity for: {breach_detail}")
+        if no_capacity_roles:
+            reason_parts.append(f"No configured weekly capacity for roles: {', '.join(no_capacity_roles)}")
+        reason = "; ".join(reason_parts) + f" in {portfolio} portfolio."
         return (
             "REJECTED",
             breach_roles,
             utilization,
-            f"Timeline overlap exceeds weekly capacity for: {breach_detail} in {portfolio} portfolio.",
+            reason,
         )
     return (
         "APPROVED",

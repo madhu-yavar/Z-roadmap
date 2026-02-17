@@ -7,6 +7,7 @@ from app.core.config import settings
 from app.core.security import get_password_hash
 from app.db.base import Base
 from app.db.session import engine
+from app.models.custom_role import CustomRole  # noqa: F401
 from app.models.enums import UserRole
 from app.models.user import User
 from sqlalchemy.orm import Session
@@ -104,12 +105,38 @@ def _ensure_compat_columns() -> None:
             updated_at TIMESTAMP NOT NULL DEFAULT NOW()
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS custom_roles (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(80) NOT NULL UNIQUE,
+            base_role user_role NOT NULL,
+            scope TEXT NOT NULL DEFAULT '',
+            responsibilities JSON NOT NULL DEFAULT '[]',
+            can_create_users BOOLEAN NOT NULL DEFAULT FALSE,
+            can_configure_team_capacity BOOLEAN NOT NULL DEFAULT FALSE,
+            can_allocate_portfolio_quotas BOOLEAN NOT NULL DEFAULT FALSE,
+            can_submit_commitment BOOLEAN NOT NULL DEFAULT FALSE,
+            can_edit_roadmap BOOLEAN NOT NULL DEFAULT FALSE,
+            can_manage_settings BOOLEAN NOT NULL DEFAULT FALSE,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by INTEGER REFERENCES users(id),
+            updated_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_custom_roles_name ON custom_roles (name)",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_pm INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_until TIMESTAMP",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_by INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS quota_locked_until TIMESTAMP",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS quota_locked_by INTEGER",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_ceo_at TIMESTAMP",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_ceo_by INTEGER",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_vp_at TIMESTAMP",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_confirmed_vp_by INTEGER",
     ]
     with engine.begin() as conn:
         for stmt in statements:

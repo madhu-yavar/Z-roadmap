@@ -73,3 +73,15 @@ def require_roles(*allowed_roles: UserRole) -> Callable:
         return current_user
 
     return checker
+
+
+def ensure_custom_role_permission(current_user: User, permission_attr: str, action_label: str) -> None:
+    custom_role = current_user.custom_role
+    if not custom_role:
+        return
+    if getattr(custom_role, permission_attr, False):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=f"Custom role '{custom_role.name}' does not allow: {action_label}",
+    )

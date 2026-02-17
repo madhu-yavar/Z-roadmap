@@ -261,10 +261,10 @@ export function DetailedRoadmap({ roadmapPlanItems, governanceConfig, busy }: De
       PM: governanceConfig.team_pm * governanceConfig.efficiency_pm * 52 * (clientFactor + internalFactor),
     }
     const roleUtilization = {
-      FE: roleCapacityPw.FE <= 0 ? (roleDemandPw.FE <= 0 ? 0 : 999) : (roleDemandPw.FE / roleCapacityPw.FE) * 100,
-      BE: roleCapacityPw.BE <= 0 ? (roleDemandPw.BE <= 0 ? 0 : 999) : (roleDemandPw.BE / roleCapacityPw.BE) * 100,
-      AI: roleCapacityPw.AI <= 0 ? (roleDemandPw.AI <= 0 ? 0 : 999) : (roleDemandPw.AI / roleCapacityPw.AI) * 100,
-      PM: roleCapacityPw.PM <= 0 ? (roleDemandPw.PM <= 0 ? 0 : 999) : (roleDemandPw.PM / roleCapacityPw.PM) * 100,
+      FE: roleCapacityPw.FE <= 0 ? (roleDemandPw.FE <= 0 ? 0 : null) : (roleDemandPw.FE / roleCapacityPw.FE) * 100,
+      BE: roleCapacityPw.BE <= 0 ? (roleDemandPw.BE <= 0 ? 0 : null) : (roleDemandPw.BE / roleCapacityPw.BE) * 100,
+      AI: roleCapacityPw.AI <= 0 ? (roleDemandPw.AI <= 0 ? 0 : null) : (roleDemandPw.AI / roleCapacityPw.AI) * 100,
+      PM: roleCapacityPw.PM <= 0 ? (roleDemandPw.PM <= 0 ? 0 : null) : (roleDemandPw.PM / roleCapacityPw.PM) * 100,
     }
 
     return {
@@ -395,20 +395,22 @@ export function DetailedRoadmap({ roadmapPlanItems, governanceConfig, busy }: De
             {(['FE', 'BE', 'AI', 'PM'] as const).map((role) => {
               const demand = capacityInsights.roleDemandPw[role]
               const capacity = capacityInsights.roleCapacityPw?.[role] || 0
-              const utilization = capacityInsights.roleUtilization?.[role] || 0
-              const tone = utilization > 100 ? 'error' : utilization >= 85 ? 'warn' : 'ok'
+              const utilization = capacityInsights.roleUtilization?.[role] ?? 0
+              const tone = utilization == null ? 'error' : utilization > 100 ? 'error' : utilization >= 85 ? 'warn' : 'ok'
               return (
                 <article key={role} className="analytics-capacity-card">
                   <div className="line-item">
                     <span className="mono">{role}</span>
-                    <span className={`capacity-meter-state ${tone}`}>{utilization.toFixed(1)}%</span>
+                    <span className={`capacity-meter-state ${tone}`}>
+                      {utilization == null ? 'N/A' : `${utilization.toFixed(1)}%`}
+                    </span>
                   </div>
                   <p className="muted">{demand.toFixed(1)} pw demand / {capacity.toFixed(1)} pw capacity</p>
                   <div className="mini-progress-bar">
                     <div
                       className="mini-progress-fill"
                       style={{
-                        width: `${Math.min(100, utilization)}%`,
+                        width: `${utilization == null ? 100 : Math.min(100, utilization)}%`,
                         backgroundColor: tone === 'error' ? '#ef4444' : tone === 'warn' ? '#f59e0b' : '#10b981',
                       }}
                     />

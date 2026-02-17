@@ -135,6 +135,10 @@ type GovernanceConfig = {
   team_locked_by: number | null
   quota_locked_until: string | null
   quota_locked_by: number | null
+  efficiency_confirmed_ceo_at: string | null
+  efficiency_confirmed_ceo_by: number | null
+  efficiency_confirmed_vp_at: string | null
+  efficiency_confirmed_vp_by: number | null
 }
 
 type CapacityValidationResult = {
@@ -178,11 +182,16 @@ type ChatResponse = {
   next_action?: string
 }
 
+type SystemRole = 'ADMIN' | 'CEO' | 'VP' | 'BA' | 'PM' | 'PO'
+
 type CurrentUser = {
   id: number
   full_name: string
   email: string
-  role: 'ADMIN' | 'CEO' | 'VP' | 'BA' | 'PM' | 'PO'
+  role: SystemRole
+  role_label: string
+  custom_role_id: number | null
+  custom_role_name: string | null
   is_active: boolean
 }
 
@@ -190,15 +199,40 @@ type UserAdmin = {
   id: number
   full_name: string
   email: string
-  role: CurrentUser['role']
+  role: SystemRole
+  role_label: string
+  custom_role_id: number | null
+  custom_role_name: string | null
   is_active: boolean
 }
 
 type RolePolicy = {
-  role: CurrentUser['role']
+  role: string
+  role_kind: 'system' | 'custom' | string
+  base_role: SystemRole
   can_create_users: boolean
+  can_configure_team_capacity: boolean
+  can_allocate_portfolio_quotas: boolean
+  can_submit_commitment: boolean
+  can_edit_roadmap: boolean
+  can_manage_settings: boolean
   scope: string
   responsibilities: string[]
+}
+
+type CustomRole = {
+  id: number
+  name: string
+  base_role: SystemRole
+  scope: string
+  responsibilities: string[]
+  can_create_users: boolean
+  can_configure_team_capacity: boolean
+  can_allocate_portfolio_quotas: boolean
+  can_submit_commitment: boolean
+  can_edit_roadmap: boolean
+  can_manage_settings: boolean
+  is_active: boolean
 }
 
 type WorkflowAlert = {
@@ -280,6 +314,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://127.0.0.1:8000'
 const EFFICIENCY_MIN = 0.1
 const EFFICIENCY_MAX = 1.0
 const TEAM_SIZE_MIN = 1
+const EFFICIENCY_CONFIRM_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000
 
 // Helper function to get project type color for Gantt bars
 function getProjectTypeColor(projectContext: string, deliveryMode: string): string {
@@ -359,13 +394,17 @@ function fmtDuration(ms: number): string {
   return `${hours}h ${String(minutes).padStart(2, '0')}m`
 }
 
-function parsePercent(value: string | undefined): number {
-  const n = Number(String(value || '').replace('%', '').trim())
-  if (!Number.isFinite(n)) return 0
+function parsePercent(value: string | undefined): number | null {
+  const raw = String(value || '').trim().toUpperCase()
+  if (!raw) return 0
+  if (raw === 'N/A' || raw === 'NA' || raw === '-') return null
+  const n = Number(raw.replace('%', '').trim())
+  if (!Number.isFinite(n)) return null
   return n
 }
 
-function capacityTone(usedPercent: number): 'ok' | 'warn' | 'error' {
+function capacityTone(usedPercent: number | null): 'ok' | 'warn' | 'error' {
+  if (usedPercent == null) return 'error'
   if (usedPercent > 100) return 'error'
   if (usedPercent >= 85) return 'warn'
   return 'ok'
@@ -386,27 +425,32 @@ function CapacityMeters({
       </div>
       <div className="capacity-meter-grid">
         {roles.map((role) => {
-          const used = Math.max(0, parsePercent(utilization[role]))
-          const available = Math.max(0, 100 - used)
+          const parsedUsed = parsePercent(utilization[role])
+          const used = parsedUsed == null ? null : Math.max(0, parsedUsed)
+          const available = used == null ? null : Math.max(0, 100 - used)
           const tone = capacityTone(used)
-          const overBy = used > 100 ? used - 100 : 0
+          const overBy = used != null && used > 100 ? used - 100 : 0
           return (
             <div key={role} className="capacity-meter-card">
               <div className="capacity-meter-head">
                 <span>{role}</span>
                 <span className={`capacity-meter-state ${tone}`}>
-                  {used.toFixed(1)}% used
+                  {used == null ? 'No capacity configured' : `${used.toFixed(1)}% used`}
                 </span>
               </div>
               <div className="capacity-meter-track" aria-hidden="true">
                 <div
                   className={`capacity-meter-fill ${tone}`}
-                  style={{ width: `${Math.min(used, 100)}%` }}
+                  style={{ width: `${used == null ? 100 : Math.min(used, 100)}%` }}
                 />
               </div>
               <div className="capacity-meter-foot">
                 <span className="muted">
-                  {overBy > 0 ? `Over by ${overBy.toFixed(1)}%` : `Available ${available.toFixed(1)}%`}
+                  {used == null
+                    ? 'Assign team size, efficiency, and quota.'
+                    : overBy > 0
+                      ? `Over by ${overBy.toFixed(1)}%`
+                      : `Available ${(available || 0).toFixed(1)}%`}
                 </span>
                 <span className="mono">{utilization[role]}</span>
               </div>
@@ -466,7 +510,11 @@ function utilizationFromUsage(usage: RoleTotals, capacity: RoleTotals): Capacity
   for (const role of roles) {
     const used = usage[role]
     const cap = capacity[role]
-    const pct = cap <= 0 ? (used <= 0 ? 0 : 999) : (used / cap) * 100
+    if (cap <= 0) {
+      out[role] = used <= 0 ? '0.0%' : 'N/A'
+      continue
+    }
+    const pct = (used / cap) * 100
     out[role] = `${pct.toFixed(1)}%`
   }
   return out
@@ -582,6 +630,7 @@ function App() {
   })
   const [governanceConfig, setGovernanceConfig] = useState<GovernanceConfig | null>(null)
   const [users, setUsers] = useState<UserAdmin[]>([])
+  const [customRoles, setCustomRoles] = useState<CustomRole[]>([])
   const [rolePolicies, setRolePolicies] = useState<RolePolicy[]>([])
   const [useCustomModel, setUseCustomModel] = useState(false)
   const [llmTestResult, setLlmTestResult] = useState<LLMTestResult | null>(null)
@@ -699,6 +748,30 @@ function App() {
           message: `Quota configuration is locked for ${fmtDuration(quotaLock - now)}.`,
           path: '/settings',
         })
+      }
+      if (role === 'CEO') {
+        const lastConfirmed = governanceConfig.efficiency_confirmed_ceo_at ? new Date(governanceConfig.efficiency_confirmed_ceo_at).getTime() : 0
+        if (!Number.isFinite(lastConfirmed) || lastConfirmed <= 0 || now - lastConfirmed >= EFFICIENCY_CONFIRM_INTERVAL_MS) {
+          push({
+            id: 'alert-eff-confirm-ceo',
+            level: 'warning',
+            title: 'Monthly Efficiency Confirmation Due',
+            message: 'Confirm FE/BE/AI/PM efficiency baseline for this month.',
+            path: '/settings',
+          })
+        }
+      }
+      if (role === 'VP') {
+        const lastConfirmed = governanceConfig.efficiency_confirmed_vp_at ? new Date(governanceConfig.efficiency_confirmed_vp_at).getTime() : 0
+        if (!Number.isFinite(lastConfirmed) || lastConfirmed <= 0 || now - lastConfirmed >= EFFICIENCY_CONFIRM_INTERVAL_MS) {
+          push({
+            id: 'alert-eff-confirm-vp',
+            level: 'warning',
+            title: 'Monthly Efficiency Confirmation Due',
+            message: 'Confirm FE/BE/AI/PM efficiency baseline for this month.',
+            path: '/settings',
+          })
+        }
       }
     } else if (isExec || isDelivery) {
       push({
@@ -828,10 +901,19 @@ function App() {
           })
         }
       }
+      if (customRoles.filter((r) => r.is_active).length === 0) {
+        push({
+          id: 'alert-custom-role-none',
+          level: 'info',
+          title: 'No Custom User Types',
+          message: 'Define custom user types if you need finer role splits (for example AI Engineer, Data Scientist).',
+          path: '/settings',
+        })
+      }
     }
 
     return alerts
-  }, [currentUser, activeConfig, governanceConfig, dashboard, roadmapPlanItems, users])
+  }, [currentUser, activeConfig, governanceConfig, dashboard, roadmapPlanItems, users, customRoles])
 
   const selectedIntakeItem = useMemo(
     () => intakeItems.find((item) => item.id === selectedIntakeId) || null,
@@ -893,7 +975,7 @@ function App() {
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
 
   async function loadData(activeToken: string) {
-    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, rolePoliciesRes] =
+    const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, customRolesRes, rolePoliciesRes] =
       await Promise.allSettled([
         api<CurrentUser>('/auth/me', {}, activeToken),
         api<Dashboard>('/dashboard/summary', {}, activeToken),
@@ -905,6 +987,7 @@ function App() {
         api<LLMConfig[]>('/settings/llm', {}, activeToken),
         api<GovernanceConfig>('/settings/governance', {}, activeToken),
         api<UserAdmin[]>('/users', {}, activeToken),
+        api<CustomRole[]>('/users/custom-roles', {}, activeToken),
         api<RolePolicy[]>('/users/roles-matrix', {}, activeToken),
       ])
 
@@ -926,6 +1009,7 @@ function App() {
     setLlmConfigs(cfgRes.status === 'fulfilled' ? cfgRes.value : [])
     setGovernanceConfig(governanceRes.status === 'fulfilled' ? governanceRes.value : null)
     setUsers(usersRes.status === 'fulfilled' ? usersRes.value : [])
+    setCustomRoles(customRolesRes.status === 'fulfilled' ? customRolesRes.value : [])
     setRolePolicies(rolePoliciesRes.status === 'fulfilled' ? rolePoliciesRes.value : [])
   }
 
@@ -1654,11 +1738,37 @@ function App() {
     }
   }
 
+  async function confirmGovernanceEfficiency() {
+    if (!token) return
+    const proceed = window.confirm(
+      'Monthly efficiency confirmation:\n- You are confirming FE/BE/AI/PM efficiency values for current governance period.\nContinue?',
+    )
+    if (!proceed) return
+    setBusy(true)
+    setError('')
+    try {
+      const cfg = await api<GovernanceConfig>(
+        '/settings/governance/efficiency-confirmation',
+        {
+          method: 'POST',
+        },
+        token,
+      )
+      setGovernanceConfig(cfg)
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Efficiency confirmation failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function createPlatformUser(payload: {
     full_name: string
     email: string
     password: string
-    role: CurrentUser['role']
+    role: SystemRole
+    custom_role_id?: number | null
   }) {
     if (!token) return
     setBusy(true)
@@ -1684,7 +1794,8 @@ function App() {
     userId: number,
     payload: {
       full_name?: string
-      role?: CurrentUser['role']
+      role?: SystemRole
+      custom_role_id?: number | null
       password?: string
       is_active?: boolean
     },
@@ -1704,6 +1815,75 @@ function App() {
       await loadData(token)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'User update failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function createCustomRole(payload: {
+    name: string
+    base_role: SystemRole
+    scope: string
+    responsibilities: string[]
+    can_create_users: boolean
+    can_configure_team_capacity: boolean
+    can_allocate_portfolio_quotas: boolean
+    can_submit_commitment: boolean
+    can_edit_roadmap: boolean
+    can_manage_settings: boolean
+    is_active: boolean
+  }) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<CustomRole>(
+        '/users/custom-roles',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Custom role creation failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function updateCustomRole(
+    customRoleId: number,
+    payload: {
+      name?: string
+      base_role?: SystemRole
+      scope?: string
+      responsibilities?: string[]
+      can_create_users?: boolean
+      can_configure_team_capacity?: boolean
+      can_allocate_portfolio_quotas?: boolean
+      can_submit_commitment?: boolean
+      can_edit_roadmap?: boolean
+      can_manage_settings?: boolean
+      is_active?: boolean
+    },
+  ) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<CustomRole>(
+        `/users/custom-roles/${customRoleId}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Custom role update failed')
     } finally {
       setBusy(false)
     }
@@ -1743,6 +1923,7 @@ function App() {
     setLlmConfigs([])
     setGovernanceConfig(null)
     setUsers([])
+    setCustomRoles([])
     setRolePolicies([])
     setIntakeHistory([])
     setSelectedAnalysis(null)
@@ -2029,6 +2210,7 @@ function App() {
               llmConfigs={llmConfigs}
               governanceConfig={governanceConfig}
               users={users}
+              customRoles={customRoles}
               rolePolicies={rolePolicies}
               currentUserRole={currentUser?.role || 'PM'}
               providerForm={providerForm}
@@ -2039,8 +2221,11 @@ function App() {
               testLLMConfig={testLLMConfig}
               saveGovernanceTeamConfig={saveGovernanceTeamConfig}
               saveGovernanceQuotas={saveGovernanceQuotas}
+              confirmGovernanceEfficiency={confirmGovernanceEfficiency}
               createPlatformUser={createPlatformUser}
+              createCustomRole={createCustomRole}
               updatePlatformUser={updatePlatformUser}
+              updateCustomRole={updateCustomRole}
               downloadProjectDocument={downloadProjectDocument}
               llmTestResult={llmTestResult}
               busy={busy}
@@ -4711,8 +4896,9 @@ type SettingsProps = {
   llmConfigs: LLMConfig[]
   governanceConfig: GovernanceConfig | null
   users: UserAdmin[]
+  customRoles: CustomRole[]
   rolePolicies: RolePolicy[]
-  currentUserRole: CurrentUser['role']
+  currentUserRole: SystemRole
   providerForm: {
     provider: string
     model: string
@@ -4742,18 +4928,50 @@ type SettingsProps = {
     efficiency_pm: string
   }) => Promise<void>
   saveGovernanceQuotas: (payload: { quota_client: string; quota_internal: string }) => Promise<void>
+  confirmGovernanceEfficiency: () => Promise<void>
   createPlatformUser: (payload: {
     full_name: string
     email: string
     password: string
-    role: CurrentUser['role']
+    role: SystemRole
+    custom_role_id?: number | null
+  }) => Promise<void>
+  createCustomRole: (payload: {
+    name: string
+    base_role: SystemRole
+    scope: string
+    responsibilities: string[]
+    can_create_users: boolean
+    can_configure_team_capacity: boolean
+    can_allocate_portfolio_quotas: boolean
+    can_submit_commitment: boolean
+    can_edit_roadmap: boolean
+    can_manage_settings: boolean
+    is_active: boolean
   }) => Promise<void>
   updatePlatformUser: (
     userId: number,
     payload: {
       full_name?: string
-      role?: CurrentUser['role']
+      role?: SystemRole
+      custom_role_id?: number | null
       password?: string
+      is_active?: boolean
+    },
+  ) => Promise<void>
+  updateCustomRole: (
+    customRoleId: number,
+    payload: {
+      name?: string
+      base_role?: SystemRole
+      scope?: string
+      responsibilities?: string[]
+      can_create_users?: boolean
+      can_configure_team_capacity?: boolean
+      can_allocate_portfolio_quotas?: boolean
+      can_submit_commitment?: boolean
+      can_edit_roadmap?: boolean
+      can_manage_settings?: boolean
       is_active?: boolean
     },
   ) => Promise<void>
@@ -4772,6 +4990,7 @@ function SettingsPage({
   llmConfigs,
   governanceConfig,
   users,
+  customRoles,
   rolePolicies,
   currentUserRole,
   providerForm,
@@ -4782,8 +5001,11 @@ function SettingsPage({
   testLLMConfig,
   saveGovernanceTeamConfig,
   saveGovernanceQuotas,
+  confirmGovernanceEfficiency,
   createPlatformUser,
+  createCustomRole,
   updatePlatformUser,
+  updateCustomRole,
   downloadProjectDocument,
   llmTestResult,
   busy,
@@ -4806,7 +5028,20 @@ function SettingsPage({
   const [newUserName, setNewUserName] = useState('')
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
-  const [newUserRole, setNewUserRole] = useState<CurrentUser['role']>('CEO')
+  const [newUserRole, setNewUserRole] = useState<SystemRole>('CEO')
+  const [newUserCustomRoleId, setNewUserCustomRoleId] = useState('')
+  const [customRoleName, setCustomRoleName] = useState('')
+  const [customRoleBaseRole, setCustomRoleBaseRole] = useState<SystemRole>('PM')
+  const [customRoleScope, setCustomRoleScope] = useState('')
+  const [customRoleResponsibilities, setCustomRoleResponsibilities] = useState('')
+  const [customRoleRights, setCustomRoleRights] = useState({
+    can_create_users: false,
+    can_configure_team_capacity: false,
+    can_allocate_portfolio_quotas: false,
+    can_submit_commitment: true,
+    can_edit_roadmap: true,
+    can_manage_settings: false,
+  })
   const [docVersion, setDocVersion] = useState('1.0')
   const [docApprovedBy, setDocApprovedBy] = useState('CEO')
   const [docLevel, setDocLevel] = useState<'l1' | 'l2'>('l1')
@@ -4846,6 +5081,16 @@ function SettingsPage({
   const quotaLockedUntilMs = governanceConfig?.quota_locked_until ? new Date(governanceConfig.quota_locked_until).getTime() : 0
   const isTeamLockActive = Number.isFinite(teamLockedUntilMs) && teamLockedUntilMs > nowMs
   const isQuotaLockActive = Number.isFinite(quotaLockedUntilMs) && quotaLockedUntilMs > nowMs
+  const isEfficiencyConfirmer = currentUserRole === 'CEO' || currentUserRole === 'VP'
+  const roleConfirmationAt =
+    currentUserRole === 'CEO'
+      ? governanceConfig?.efficiency_confirmed_ceo_at || ''
+      : currentUserRole === 'VP'
+        ? governanceConfig?.efficiency_confirmed_vp_at || ''
+        : ''
+  const roleConfirmationMs = roleConfirmationAt ? new Date(roleConfirmationAt).getTime() : 0
+  const confirmationDue = !Number.isFinite(roleConfirmationMs) || roleConfirmationMs <= 0 || nowMs - roleConfirmationMs >= EFFICIENCY_CONFIRM_INTERVAL_MS
+  const assignableCreateCustomRoles = customRoles.filter((r) => r.is_active && r.base_role === newUserRole)
 
   useEffect(() => {
     if (!governanceConfig) return
@@ -4865,6 +5110,12 @@ function SettingsPage({
     const timer = window.setInterval(() => setNowMs(Date.now()), 30000)
     return () => window.clearInterval(timer)
   }, [])
+
+  useEffect(() => {
+    if (!newUserCustomRoleId) return
+    const valid = assignableCreateCustomRoles.some((r) => String(r.id) === newUserCustomRoleId)
+    if (!valid) setNewUserCustomRoleId('')
+  }, [newUserRole, newUserCustomRoleId, assignableCreateCustomRoles])
 
   return (
     <main className="page-wrap">
@@ -5033,6 +5284,19 @@ function SettingsPage({
             </button>
           </div>
         </div>
+        {isEfficiencyConfirmer && (
+          <div className="stack" style={{ marginTop: 16 }}>
+            <h3>Monthly Efficiency Confirmation ({currentUserRole})</h3>
+            <p className={confirmationDue ? 'error-text' : 'muted'}>
+              {roleConfirmationAt
+                ? `Last confirmation: ${fmtDateTime(roleConfirmationAt)}`
+                : 'No confirmation recorded yet for this role.'}
+            </p>
+            <button className="primary-btn" type="button" disabled={busy} onClick={() => void confirmGovernanceEfficiency()}>
+              Confirm Monthly Efficiency
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="panel-card settings-section">
@@ -5045,7 +5309,9 @@ function SettingsPage({
             <thead>
               <tr>
                 <th>Role</th>
+                <th>Base Role</th>
                 <th>User Mgmt</th>
+                <th>Rights</th>
                 <th>Scope</th>
                 <th>Responsibilities</th>
               </tr>
@@ -5054,7 +5320,19 @@ function SettingsPage({
               {rolePolicies.map((policy) => (
                 <tr key={policy.role}>
                   <td>{policy.role}</td>
+                  <td>{policy.base_role}</td>
                   <td>{policy.can_create_users ? 'Yes' : 'No'}</td>
+                  <td>
+                    {[
+                      policy.can_configure_team_capacity ? 'Team Capacity' : '',
+                      policy.can_allocate_portfolio_quotas ? 'Portfolio Quotas' : '',
+                      policy.can_submit_commitment ? 'Commitment Submit' : '',
+                      policy.can_edit_roadmap ? 'Roadmap Edit' : '',
+                      policy.can_manage_settings ? 'Settings' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' | ') || 'None'}
+                  </td>
                   <td>{policy.scope}</td>
                   <td>{policy.responsibilities.join(' | ')}</td>
                 </tr>
@@ -5066,8 +5344,203 @@ function SettingsPage({
 
       {isAdmin && (
         <section className="panel-card settings-section">
+          <h2>Custom User Types (Admin)</h2>
+          <p className="muted">
+            Create extensible user types (for example AI Engineer, Data Scientist) with explicit rights mapped to a base role.
+          </p>
+          <div className="stack">
+            <div className="split-4">
+              <label>
+                User Type Name
+                <input
+                  value={customRoleName}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleName(e.target.value)}
+                  placeholder="AI Engineer"
+                />
+              </label>
+              <label>
+                Base Role
+                <select value={customRoleBaseRole} disabled={busy} onChange={(e) => setCustomRoleBaseRole(e.target.value as SystemRole)}>
+                  <option value="CEO">CEO</option>
+                  <option value="VP">VP</option>
+                  <option value="BA">BA</option>
+                  <option value="PM">PM</option>
+                  <option value="PO">PO</option>
+                  <option value="ADMIN">ADMIN</option>
+                </select>
+              </label>
+              <label>
+                Scope
+                <input
+                  value={customRoleScope}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleScope(e.target.value)}
+                  placeholder="AI delivery and model lifecycle scope"
+                />
+              </label>
+              <label>
+                Responsibilities (one per line)
+                <textarea
+                  rows={3}
+                  value={customRoleResponsibilities}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleResponsibilities(e.target.value)}
+                />
+              </label>
+            </div>
+            <div className="split-3">
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={customRoleRights.can_create_users}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleRights((s) => ({ ...s, can_create_users: e.target.checked }))}
+                />
+                <span>Can create users</span>
+              </label>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={customRoleRights.can_configure_team_capacity}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleRights((s) => ({ ...s, can_configure_team_capacity: e.target.checked }))}
+                />
+                <span>Can configure team capacity</span>
+              </label>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={customRoleRights.can_allocate_portfolio_quotas}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleRights((s) => ({ ...s, can_allocate_portfolio_quotas: e.target.checked }))}
+                />
+                <span>Can allocate portfolio quotas</span>
+              </label>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={customRoleRights.can_submit_commitment}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleRights((s) => ({ ...s, can_submit_commitment: e.target.checked }))}
+                />
+                <span>Can submit commitment</span>
+              </label>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={customRoleRights.can_edit_roadmap}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleRights((s) => ({ ...s, can_edit_roadmap: e.target.checked }))}
+                />
+                <span>Can edit roadmap</span>
+              </label>
+              <label className="inline-check">
+                <input
+                  type="checkbox"
+                  checked={customRoleRights.can_manage_settings}
+                  disabled={busy}
+                  onChange={(e) => setCustomRoleRights((s) => ({ ...s, can_manage_settings: e.target.checked }))}
+                />
+                <span>Can manage settings</span>
+              </label>
+            </div>
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={busy || !customRoleName.trim()}
+              onClick={async () => {
+                await createCustomRole({
+                  name: customRoleName.trim(),
+                  base_role: customRoleBaseRole,
+                  scope: customRoleScope.trim(),
+                  responsibilities: customRoleResponsibilities
+                    .split('\n')
+                    .map((item) => item.trim())
+                    .filter(Boolean),
+                  can_create_users: customRoleRights.can_create_users,
+                  can_configure_team_capacity: customRoleRights.can_configure_team_capacity,
+                  can_allocate_portfolio_quotas: customRoleRights.can_allocate_portfolio_quotas,
+                  can_submit_commitment: customRoleRights.can_submit_commitment,
+                  can_edit_roadmap: customRoleRights.can_edit_roadmap,
+                  can_manage_settings: customRoleRights.can_manage_settings,
+                  is_active: true,
+                })
+                setCustomRoleName('')
+                setCustomRoleScope('')
+                setCustomRoleResponsibilities('')
+                setCustomRoleRights({
+                  can_create_users: false,
+                  can_configure_team_capacity: false,
+                  can_allocate_portfolio_quotas: false,
+                  can_submit_commitment: true,
+                  can_edit_roadmap: true,
+                  can_manage_settings: false,
+                })
+              }}
+            >
+              Create Custom User Type
+            </button>
+          </div>
+          <table className="docs-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Base Role</th>
+                <th>Scope</th>
+                <th>Rights</th>
+                <th>Responsibilities</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customRoles.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    No custom user types defined.
+                  </td>
+                </tr>
+              )}
+              {customRoles.map((role) => (
+                <tr key={role.id}>
+                  <td>{role.name}</td>
+                  <td>{role.base_role}</td>
+                  <td>{role.scope || '-'}</td>
+                  <td>
+                    {[
+                      role.can_create_users ? 'User Mgmt' : '',
+                      role.can_configure_team_capacity ? 'Team Capacity' : '',
+                      role.can_allocate_portfolio_quotas ? 'Portfolio Quotas' : '',
+                      role.can_submit_commitment ? 'Commitment' : '',
+                      role.can_edit_roadmap ? 'Roadmap' : '',
+                      role.can_manage_settings ? 'Settings' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' | ') || 'None'}
+                  </td>
+                  <td>{role.responsibilities.join(' | ') || '-'}</td>
+                  <td>
+                    <label className="inline-check">
+                      <input
+                        type="checkbox"
+                        checked={role.is_active}
+                        disabled={busy}
+                        onChange={(e) => void updateCustomRole(role.id, { is_active: e.target.checked })}
+                      />
+                      <span>{role.is_active ? 'Active' : 'Inactive'}</span>
+                    </label>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
+      {isAdmin && (
+        <section className="panel-card settings-section">
           <h2>User Access Management (Admin)</h2>
-          <p className="muted">Admin creates and maintains CEO, VP, BA, PM, and PO user accounts.</p>
+          <p className="muted">Admin creates users, assigns base roles, and optionally maps users to custom user types.</p>
           <div className="stack">
             <div className="split-4">
               <label>
@@ -5080,13 +5553,24 @@ function SettingsPage({
               </label>
               <label>
                 Role
-                <select value={newUserRole} disabled={busy} onChange={(e) => setNewUserRole(e.target.value as CurrentUser['role'])}>
+                <select value={newUserRole} disabled={busy} onChange={(e) => setNewUserRole(e.target.value as SystemRole)}>
                   <option value="CEO">CEO</option>
                   <option value="VP">VP</option>
                   <option value="BA">BA</option>
                   <option value="PM">PM</option>
                   <option value="PO">PO</option>
                   <option value="ADMIN">ADMIN</option>
+                </select>
+              </label>
+              <label>
+                Custom User Type
+                <select value={newUserCustomRoleId} disabled={busy} onChange={(e) => setNewUserCustomRoleId(e.target.value)}>
+                  <option value="">None</option>
+                  {assignableCreateCustomRoles.map((role) => (
+                    <option key={role.id} value={String(role.id)}>
+                      {role.name}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -5110,11 +5594,13 @@ function SettingsPage({
                   email: newUserEmail.trim().toLowerCase(),
                   password: newUserPassword,
                   role: newUserRole,
+                  custom_role_id: newUserCustomRoleId ? Number(newUserCustomRoleId) : null,
                 })
                 setNewUserName('')
                 setNewUserEmail('')
                 setNewUserPassword('')
                 setNewUserRole('CEO')
+                setNewUserCustomRoleId('')
               }}
             >
               Create User
@@ -5127,6 +5613,7 @@ function SettingsPage({
                 <th>Name</th>
                 <th>Email</th>
                 <th>Role</th>
+                <th>User Type</th>
                 <th>Status</th>
                 <th>Password Reset</th>
               </tr>
@@ -5134,7 +5621,7 @@ function SettingsPage({
             <tbody>
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="muted">
+                  <td colSpan={7} className="muted">
                     No users found.
                   </td>
                 </tr>
@@ -5148,7 +5635,12 @@ function SettingsPage({
                     <select
                       value={u.role}
                       disabled={busy}
-                      onChange={(e) => void updatePlatformUser(u.id, { role: e.target.value as CurrentUser['role'] })}
+                      onChange={(e) =>
+                        void updatePlatformUser(u.id, {
+                          role: e.target.value as SystemRole,
+                          custom_role_id: null,
+                        })
+                      }
                     >
                       <option value="ADMIN">ADMIN</option>
                       <option value="CEO">CEO</option>
@@ -5156,6 +5648,26 @@ function SettingsPage({
                       <option value="BA">BA</option>
                       <option value="PM">PM</option>
                       <option value="PO">PO</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select
+                      value={u.custom_role_id == null ? '' : String(u.custom_role_id)}
+                      disabled={busy}
+                      onChange={(e) =>
+                        void updatePlatformUser(u.id, {
+                          custom_role_id: e.target.value ? Number(e.target.value) : null,
+                        })
+                      }
+                    >
+                      <option value="">None</option>
+                      {customRoles
+                        .filter((role) => role.is_active && role.base_role === u.role)
+                        .map((role) => (
+                          <option key={role.id} value={String(role.id)}>
+                            {role.name}
+                          </option>
+                        ))}
                     </select>
                   </td>
                   <td>
