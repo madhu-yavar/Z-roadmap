@@ -39,6 +39,13 @@ class UnderstandingApprovalIn(BaseModel):
     confidence: str = "medium"
 
 
+class UnderstandingDraftIn(BaseModel):
+    primary_intent: str = ""
+    explicit_outcomes: list[str] = []
+    dominant_theme: str = ""
+    confidence: str = "medium"
+
+
 class IntakeOut(BaseModel):
     id: int
     document_id: int

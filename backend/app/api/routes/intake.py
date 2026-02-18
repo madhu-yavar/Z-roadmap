@@ -29,6 +29,7 @@ from app.schemas.intake import (
     IntakeOut,
     IntakeReviewIn,
     UnderstandingApprovalIn,
+    UnderstandingDraftIn,
 )
 from app.services.intake_agent import generate_intake_analysis_v2, generate_roadmap_candidate_from_document
 from app.services.versioning import log_intake_version, log_roadmap_version
@@ -82,6 +83,15 @@ def _snapshot_roadmap(item: RoadmapItem) -> dict:
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
     }
+
+
+def _normalize_understanding_confidence(value: str) -> str:
+    raw = (value or "").strip().lower()
+    if raw == "high":
+        return "High"
+    if raw == "low":
+        return "Low"
+    return "Medium"
 
 
 def _with_vertex_fallback(
@@ -407,6 +417,67 @@ def approve_understanding_and_generate_candidate(
     db.commit()
     db.refresh(item)
     return item
+
+
+@router.patch("/items/{item_id}/understanding-draft", response_model=IntakeAnalysisOut)
+def save_understanding_draft(
+    item_id: int,
+    payload: UnderstandingDraftIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
+):
+    item = db.get(IntakeItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Intake item not found")
+
+    analysis = db.query(IntakeAnalysis).filter(IntakeAnalysis.intake_item_id == item.id).first()
+    if not analysis:
+        raise HTTPException(status_code=400, detail="Run document understanding first")
+
+    existing = (analysis.output_json or {}).get("document_understanding_check") or {}
+    intent = (payload.primary_intent or "").strip() or str(existing.get("Primary intent (1 sentence)") or "").strip()
+    outcomes = [str(x).strip() for x in (payload.explicit_outcomes or []) if str(x).strip()]
+    if not outcomes:
+        existing_outcomes = existing.get("Explicit outcomes (bullet list)") or []
+        outcomes = [str(x).strip() for x in existing_outcomes if str(x).strip()]
+    theme = (payload.dominant_theme or "").strip() or str(existing.get("Dominant capability/theme (1 phrase)") or "").strip()
+    confidence = _normalize_understanding_confidence(payload.confidence or str(existing.get("Confidence") or "Medium"))
+
+    merged_output = dict(analysis.output_json or {})
+    merged_output["document_understanding_check"] = {
+        "Primary intent (1 sentence)": intent,
+        "Explicit outcomes (bullet list)": outcomes,
+        "Dominant capability/theme (1 phrase)": theme,
+        "Confidence": confidence,
+    }
+
+    review_meta = dict(merged_output.get("understanding_review") or {})
+    review_meta["draft_saved_by"] = current_user.id
+    review_meta["draft_saved_at"] = datetime.utcnow().isoformat()
+    review_meta["source"] = "manual_edit"
+    merged_output["understanding_review"] = review_meta
+
+    analysis.output_json = merged_output
+    analysis.confidence = confidence
+    db.add(analysis)
+
+    before_data = _snapshot_intake(item)
+    item.status = "understanding_pending"
+    db.add(item)
+    db.flush()
+
+    log_intake_version(
+        db=db,
+        intake_item_id=item.id,
+        action="understanding_draft_saved",
+        changed_by=current_user.id,
+        before_data=before_data,
+        after_data=_snapshot_intake(item),
+    )
+
+    db.commit()
+    db.refresh(analysis)
+    return analysis
 
 
 @router.get("/items/{item_id}/analysis", response_model=IntakeAnalysisOut)

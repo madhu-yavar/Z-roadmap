@@ -1400,6 +1400,29 @@ function App() {
     }
   }
 
+  async function saveUnderstandingDraft(itemId: number, payload: UnderstandingApprovalInput) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<IntakeAnalysisPayload>(
+        `/intake/items/${itemId}/understanding-draft`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        },
+        token,
+      )
+      await loadIntakeAnalysis(itemId)
+      await loadIntakeHistory(itemId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save understanding draft')
+      throw err
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function createManualIntake(payload: ManualIntakeIn) {
     if (!token) return
     setBusy(true)
@@ -2598,6 +2621,7 @@ function App() {
               selectedAnalysis={selectedAnalysis}
               isCEO={isCEO}
               approveUnderstanding={approveUnderstanding}
+              saveUnderstandingDraft={saveUnderstandingDraft}
               createManualIntake={createManualIntake}
               selectedDocumentIds={selectedDocumentIds}
               setSelectedDocumentIds={setSelectedDocumentIds}
@@ -3090,6 +3114,7 @@ type IntakeProps = {
   selectedAnalysis: IntakeAnalysisPayload | null
   isCEO: boolean
   approveUnderstanding: (itemId: number, payload?: UnderstandingApprovalInput) => Promise<void>
+  saveUnderstandingDraft: (itemId: number, payload: UnderstandingApprovalInput) => Promise<void>
   createManualIntake: (payload: ManualIntakeIn) => Promise<void>
   selectedDocumentIds: number[]
   setSelectedDocumentIds: Dispatch<SetStateAction<number[]>>
@@ -3129,6 +3154,7 @@ function IntakePage({
   selectedAnalysis,
   isCEO,
   approveUnderstanding,
+  saveUnderstandingDraft,
   createManualIntake,
   selectedDocumentIds,
   setSelectedDocumentIds,
@@ -3264,7 +3290,8 @@ function IntakePage({
     const intent = understandingCheck?.['Primary intent (1 sentence)'] || ''
     const outcomes = understandingCheck?.['Explicit outcomes (bullet list)'] || []
     const theme = understandingCheck?.['Dominant capability/theme (1 phrase)'] || ''
-    const confidence = (understandingCheck?.Confidence || 'medium').toString().trim() || 'medium'
+    const rawConfidence = (understandingCheck?.Confidence || 'medium').toString().trim() || 'medium'
+    const confidence = ['high', 'medium', 'low'].includes(rawConfidence.toLowerCase()) ? rawConfidence.toLowerCase() : 'medium'
     setUnderstandingIntent(intent)
     setUnderstandingOutcomesText(Array.isArray(outcomes) ? outcomes.join('\n') : '')
     setUnderstandingTheme(theme)
@@ -3681,7 +3708,21 @@ function IntakePage({
                   </p>
                 )}
                 <div className="split-2">
-                  <button className="ghost-btn" type="button" onClick={() => submitReview('understanding_pending')} disabled={busy}>
+                  <button
+                    className="ghost-btn"
+                    type="button"
+                    disabled={busy || !selectedIntakeItem}
+                    onClick={async () => {
+                      if (!selectedIntakeItem) return
+                      await saveUnderstandingDraft(selectedIntakeItem.id, {
+                        primary_intent: understandingIntent,
+                        explicit_outcomes: understandingOutcomes,
+                        dominant_theme: understandingTheme,
+                        confidence: understandingConfidence,
+                      })
+                      await submitReview('understanding_pending')
+                    }}
+                  >
                     Save Understanding Draft
                   </button>
                   <button

@@ -407,6 +407,73 @@ def _is_fragmented_intent(text: str) -> bool:
     return False
 
 
+def _scope_has_boundaries(text: str) -> bool:
+    low = (text or "").lower()
+    has_include = "include" in low or "includes" in low or "in-scope" in low
+    has_boundary = any(
+        token in low
+        for token in (
+            "excluding",
+            "exclude",
+            "limited to",
+            "does not include",
+            "out of scope",
+            "within documented",
+        )
+    )
+    return has_include and has_boundary
+
+
+def _compose_scope_from_understanding(
+    understanding_check: dict | None,
+    activities: list[str],
+    fallback_scope: str,
+) -> str:
+    data = understanding_check or {}
+    raw_intent = str(data.get("Primary intent (1 sentence)") or "").strip()
+    raw_theme = str(data.get("Dominant capability/theme (1 phrase)") or "").strip()
+    raw_outcomes = data.get("Explicit outcomes (bullet list)") or []
+
+    if isinstance(raw_outcomes, list):
+        outcome_items = [str(x) for x in raw_outcomes]
+    else:
+        outcome_items = re.split(r"[\n,;]", str(raw_outcomes))
+    outcomes = [_sanitize_outcome(x) for x in outcome_items if _sanitize_outcome(x)]
+
+    activity_items = [_strip_activity_tags(a) for a in activities if _strip_activity_tags(a)]
+
+    theme = _sanitize_title(raw_theme, "Capability Scope")
+    if theme.lower() in {"document intent is unclear", "capability scope"} and activity_items:
+        theme = _sanitize_title(" ".join(activity_items[:3]), "Capability Scope")
+
+    if raw_intent and raw_intent.lower() != "document intent is unclear.":
+        target = _single_sentence(raw_intent, max_chars=140).rstrip(".")
+    elif outcomes:
+        target = f"deliver {outcomes[0].lower()}"
+    elif activity_items:
+        target = f"deliver {activity_items[0].lower()}"
+    else:
+        target = "deliver documented business outcomes"
+
+    outcome_part = ""
+    if outcomes:
+        outcome_part = ", ".join(outcomes[:2]).lower()
+    elif activity_items:
+        outcome_part = ", ".join(activity_items[:2]).lower()
+    else:
+        outcome_part = "explicitly documented requirements"
+
+    scope = (
+        f"Scope includes {theme} to {target}, includes {outcome_part}, "
+        "and is limited to documented requirements while excluding non-documented integrations, "
+        "organization-wide change programs, and post-go-live support."
+    )
+    finalized = _single_sentence(scope, max_chars=320)
+    if _is_low_quality_sentence(finalized, strict=False):
+        return _single_sentence(fallback_scope, max_chars=320)
+    return finalized
+
+
 def _valid_evidence_refs(evidence: list[str], units: list[dict]) -> list[str]:
     valid_refs = {u.get("ref") for u in units if u.get("ref")}
     refs: list[str] = []
@@ -424,7 +491,7 @@ def _self_check(candidate: dict) -> bool:
     title_ok = 3 <= _word_count(candidate.get("title", "")) <= 6
     activities = candidate.get("activities") or []
     acts_ok = len(activities) >= 2 and all(_word_count(_strip_activity_tags(a)) <= 12 for a in activities)
-    quick_approve = bool(candidate.get("intent")) and bool(candidate.get("scope"))
+    quick_approve = bool(candidate.get("intent")) and bool(candidate.get("scope")) and _scope_has_boundaries(candidate.get("scope", ""))
     return title_ok and acts_ok and quick_approve
 
 
@@ -592,13 +659,19 @@ def _coverage_metadata(units: list[dict]) -> dict:
     }
 
 
-def _normalize_candidate(data: dict, fallback: dict, units: list[dict], file_name: str) -> dict:
+def _normalize_candidate(
+    data: dict,
+    fallback: dict,
+    units: list[dict],
+    file_name: str,
+    understanding_check: dict | None = None,
+) -> dict:
     if not isinstance(data, dict):
         raise LLMClientError("Model returned non-object JSON. Expected a JSON object.")
     candidate = {
         "title": _sanitize_title(str(data.get("Title") or data.get("title") or ""), Path(file_name).stem),
         "intent": _single_sentence(str(data.get("Intent") or data.get("intent") or fallback["intent"])),
-        "scope": _single_sentence(str(data.get("Scope") or data.get("scope") or fallback["scope"])),
+        "scope": _single_sentence(str(data.get("Scope") or data.get("scope") or fallback["scope"]), max_chars=320),
         "activities": [],
         "evidence": [],
         "confidence": str(data.get("Confidence") or data.get("confidence") or fallback["confidence"]),
@@ -657,10 +730,21 @@ def _normalize_candidate(data: dict, fallback: dict, units: list[dict], file_nam
         candidate["intent"] = fallback["intent"]
         candidate["scope"] = fallback["scope"]
 
+    if _is_low_quality_sentence(candidate["scope"], strict=False) or not _scope_has_boundaries(candidate["scope"]):
+        candidate["scope"] = _compose_scope_from_understanding(
+            understanding_check=understanding_check,
+            activities=candidate["activities"] or fallback["activities"],
+            fallback_scope=fallback["scope"],
+        )
+
     if not _self_check(candidate):
         candidate["title"] = _sanitize_title(candidate["title"], Path(file_name).stem)
         candidate["intent"] = _single_sentence(candidate["intent"] or fallback["intent"])
-        candidate["scope"] = _single_sentence(candidate["scope"] or fallback["scope"])
+        candidate["scope"] = _compose_scope_from_understanding(
+            understanding_check=understanding_check,
+            activities=candidate["activities"] or fallback["activities"],
+            fallback_scope=candidate["scope"] or fallback["scope"],
+        )
         candidate["activities"] = (candidate["activities"] or fallback["activities"])[:12]
         candidate["evidence"] = candidate["evidence"] or fallback["evidence"]
 
@@ -1043,12 +1127,23 @@ Confidence
 Field rules:
 - Title: 3-6 words, noun phrase
 - Intent: one sentence, business reason
-- Scope: one sentence, boundary definition
+- Scope: one sentence (24-45 words), must include what is in-scope and what is excluded.
 - Activities: choose count based on document complexity (minimum 3, maximum 12), verb-led items, each <12 words
 - Activities format: list of objects with keys "activity" and "tags"
 - Tags must be one or more from: FE, BE, AI
 - Evidence: document references only (no quotes)
 - Confidence: High / Medium / Low
+
+Scope quality gates (mandatory):
+- Must include the word "includes".
+- Must contain one boundary phrase: "excluding" or "limited to" or "does not include".
+- Must trace to approved outcomes and intent, not generic platform claims.
+- Must avoid marketing language and vague terms (smart, seamless, innovative, future-ready).
+
+Activity quality gates (mandatory):
+- Every activity must map to at least one approved explicit outcome.
+- Activities must be implementation-ready and non-duplicative.
+- If a role tag cannot be inferred from evidence, default tag is BE.
 {guidance_block}
 
 Approved understanding context:
@@ -1066,7 +1161,13 @@ Document units with references:
                 base_url=base_url,
                 prompt=prompt,
             )
-            candidate = _normalize_candidate(raw, fallback, units, file_name=file_name)
+            candidate = _normalize_candidate(
+                raw,
+                fallback,
+                units,
+                file_name=file_name,
+                understanding_check=understanding_check,
+            )
             llm_success = True
         except LLMClientError as exc:
             candidate = fallback
@@ -1074,6 +1175,13 @@ Document units with references:
         except Exception as exc:
             candidate = fallback
             llm_error = str(exc)
+
+    if _is_low_quality_sentence(candidate.get("scope", ""), strict=False) or not _scope_has_boundaries(candidate.get("scope", "")):
+        candidate["scope"] = _compose_scope_from_understanding(
+            understanding_check=understanding_check,
+            activities=candidate.get("activities") or fallback["activities"],
+            fallback_scope=candidate.get("scope") or fallback["scope"],
+        )
 
     analysis_output = {
         "roadmap_candidate": {
