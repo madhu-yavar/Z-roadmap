@@ -193,6 +193,94 @@ type VersionItem = {
   created_at: string
 }
 
+type AuditSummary = {
+  documents_total: number
+  intake_changes_total: number
+  roadmap_changes_total: number
+  movement_total: number
+}
+
+type AuditDocumentRow = {
+  document_id: number
+  file_name: string
+  file_type: string
+  file_hash: string
+  notes: string
+  uploaded_by: number
+  uploaded_by_email: string | null
+  uploaded_by_role: string | null
+  created_at: string
+  intake_item_id: number | null
+  intake_status: string
+  roadmap_item_id: number | null
+  roadmap_plan_item_id: number | null
+  roadmap_planning_status: string
+  project_context: string
+}
+
+type AuditIntakeChangeRow = {
+  event_id: number
+  intake_item_id: number
+  document_id: number | null
+  title: string
+  action: string
+  status: string
+  project_context: string
+  changed_by: number | null
+  changed_by_email: string | null
+  changed_by_role: string | null
+  changed_fields: string[]
+  created_at: string
+}
+
+type AuditRoadmapChangeRow = {
+  event_id: number
+  roadmap_item_id: number
+  title: string
+  action: string
+  project_context: string
+  changed_by: number | null
+  changed_by_email: string | null
+  changed_by_role: string | null
+  changed_fields: string[]
+  created_at: string
+}
+
+type AuditMovementRow = {
+  request_id: number
+  plan_item_id: number
+  bucket_item_id: number
+  title: string
+  status: string
+  request_type: string
+  project_context: string
+  from_start_date: string
+  from_end_date: string
+  to_start_date: string
+  to_end_date: string
+  reason: string
+  blocker: string
+  decision_reason: string
+  requested_by: number | null
+  requested_by_email: string | null
+  requested_by_role: string | null
+  decided_by: number | null
+  decided_by_email: string | null
+  decided_by_role: string | null
+  requested_at: string
+  decided_at: string | null
+  executed_at: string | null
+}
+
+type AuditCenterPayload = {
+  generated_at: string
+  summary: AuditSummary
+  documents: AuditDocumentRow[]
+  intake_changes: AuditIntakeChangeRow[]
+  roadmap_changes: AuditRoadmapChangeRow[]
+  movement_events: AuditMovementRow[]
+}
+
 type IntakeAnalysisPayload = {
   intake_item_id: number
   primary_type: string
@@ -1163,6 +1251,7 @@ function App() {
 
   const isCEO = currentUser?.role === 'CEO'
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
+  const canViewAuditCenter = currentUser?.role === 'ADMIN' || currentUser?.role === 'CEO' || currentUser?.role === 'VP'
 
   async function loadData(activeToken: string) {
     const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, movementRes, customRolesRes, rolePoliciesRes] =
@@ -2425,6 +2514,11 @@ function App() {
           <NavLink to="/detailed-roadmap" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
             Analytics
           </NavLink>
+          {canViewAuditCenter && (
+            <NavLink to="/audit" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
+              Audit Center
+            </NavLink>
+          )}
         </div>
         <div className="top-right">
           {currentUser && (
@@ -2705,6 +2799,15 @@ function App() {
         <Route
           path="/detailed-roadmap"
           element={<DetailedRoadmap roadmapPlanItems={roadmapPlanItems} governanceConfig={governanceConfig} busy={busy} />}
+        />
+        <Route
+          path="/audit"
+          element={
+            <AuditCenterPage
+              token={token}
+              canView={Boolean(canViewAuditCenter)}
+            />
+          }
         />
         <Route
           path="/settings"
@@ -3123,6 +3226,578 @@ type IntakeProps = {
   fetchDocumentBlob: (documentId: number) => Promise<{ blob: Blob; contentType: string }>
   setErrorMessage: Dispatch<SetStateAction<string>>
   requestIntakeSupport: (item: IntakeItem) => void
+}
+
+type AuditStageFilter = 'all' | 'documents' | 'intake' | 'roadmap' | 'movement'
+
+type AuditCenterProps = {
+  token: string | null
+  canView: boolean
+}
+
+function AuditCenterPage({ token, canView }: AuditCenterProps) {
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [audit, setAudit] = useState<AuditCenterPayload | null>(null)
+  const [stage, setStage] = useState<AuditStageFilter>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [actorFilter, setActorFilter] = useState('')
+  const [roleFilter, setRoleFilter] = useState('all')
+  const [projectFilter, setProjectFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    if (!token || !canView) return
+    setLoading(true)
+    setLoadError('')
+    api<AuditCenterPayload>('/audit/center', {}, token)
+      .then((data) => setAudit(data))
+      .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not load audit center'))
+      .finally(() => setLoading(false))
+  }, [token, canView])
+
+  function inDateRange(value: string): boolean {
+    if (!value) return true
+    const at = new Date(value).getTime()
+    if (!Number.isFinite(at)) return false
+    if (dateFrom) {
+      const start = new Date(`${dateFrom}T00:00:00`).getTime()
+      if (at < start) return false
+    }
+    if (dateTo) {
+      const end = new Date(`${dateTo}T23:59:59`).getTime()
+      if (at > end) return false
+    }
+    return true
+  }
+
+  function matchesActor(email: string | null | undefined): boolean {
+    if (!actorFilter.trim()) return true
+    return (email || '').toLowerCase().includes(actorFilter.trim().toLowerCase())
+  }
+
+  function matchesRole(role: string | null | undefined): boolean {
+    if (roleFilter === 'all') return true
+    return (role || '').toUpperCase() === roleFilter.toUpperCase()
+  }
+
+  function matchesProject(context: string): boolean {
+    if (projectFilter === 'all') return true
+    return (context || '').toLowerCase() === projectFilter.toLowerCase()
+  }
+
+  function matchesStatus(value: string): boolean {
+    if (!statusFilter.trim()) return true
+    return (value || '').toLowerCase().includes(statusFilter.trim().toLowerCase())
+  }
+
+  function matchesSearch(value: string): boolean {
+    if (!search.trim()) return true
+    return (value || '').toLowerCase().includes(search.trim().toLowerCase())
+  }
+
+  const documents = useMemo(() => {
+    const rows = audit?.documents || []
+    return rows.filter((row) => {
+      const lifecycle = `${row.intake_status || ''} ${row.roadmap_planning_status || ''}`.trim()
+      return (
+        inDateRange(row.created_at) &&
+        matchesActor(row.uploaded_by_email) &&
+        matchesRole(row.uploaded_by_role) &&
+        matchesProject(row.project_context || '') &&
+        matchesStatus(lifecycle) &&
+        matchesSearch(`${row.file_name} ${row.notes} ${row.file_hash}`)
+      )
+    })
+  }, [audit?.documents, dateFrom, dateTo, actorFilter, roleFilter, projectFilter, statusFilter, search])
+
+  const intakeChanges = useMemo(() => {
+    const rows = audit?.intake_changes || []
+    return rows.filter((row) => {
+      const statusAction = `${row.status || ''} ${row.action || ''}`.trim()
+      return (
+        inDateRange(row.created_at) &&
+        matchesActor(row.changed_by_email) &&
+        matchesRole(row.changed_by_role) &&
+        matchesProject(row.project_context || '') &&
+        matchesStatus(statusAction) &&
+        matchesSearch(`${row.title} ${row.action} ${(row.changed_fields || []).join(' ')}`)
+      )
+    })
+  }, [audit?.intake_changes, dateFrom, dateTo, actorFilter, roleFilter, projectFilter, statusFilter, search])
+
+  const roadmapChanges = useMemo(() => {
+    const rows = audit?.roadmap_changes || []
+    return rows.filter((row) => {
+      return (
+        inDateRange(row.created_at) &&
+        matchesActor(row.changed_by_email) &&
+        matchesRole(row.changed_by_role) &&
+        matchesProject(row.project_context || '') &&
+        matchesStatus(row.action || '') &&
+        matchesSearch(`${row.title} ${row.action} ${(row.changed_fields || []).join(' ')}`)
+      )
+    })
+  }, [audit?.roadmap_changes, dateFrom, dateTo, actorFilter, roleFilter, projectFilter, statusFilter, search])
+
+  const movementEvents = useMemo(() => {
+    const rows = audit?.movement_events || []
+    return rows.filter((row) => {
+      return (
+        inDateRange(row.requested_at) &&
+        (matchesActor(row.requested_by_email) || matchesActor(row.decided_by_email)) &&
+        (matchesRole(row.requested_by_role) || matchesRole(row.decided_by_role)) &&
+        matchesProject(row.project_context || '') &&
+        matchesStatus(`${row.status || ''} ${row.request_type || ''}`) &&
+        matchesSearch(`${row.title} ${row.reason} ${row.blocker} ${row.decision_reason}`)
+      )
+    })
+  }, [audit?.movement_events, dateFrom, dateTo, actorFilter, roleFilter, projectFilter, statusFilter, search])
+
+  function csvEscape(value: unknown): string {
+    const raw = String(value ?? '')
+    if (raw.includes('"') || raw.includes(',') || raw.includes('\n')) {
+      return `"${raw.replace(/"/g, '""')}"`
+    }
+    return raw
+  }
+
+  function downloadCsv(filename: string, rows: Array<Record<string, unknown>>) {
+    if (!rows.length) return
+    const headers = Object.keys(rows[0])
+    const lines = [headers.join(',')]
+    for (const row of rows) {
+      lines.push(headers.map((h) => csvEscape(row[h])).join(','))
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  if (!canView) {
+    return (
+      <main className="page-shell">
+        <section className="panel-card">
+          <h3>Audit Center</h3>
+          <p className="error-text">Access denied. Audit Center is available to ADMIN/CEO/VP only.</p>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <main className="page-shell">
+      <section className="panel-card">
+        <div className="line-item">
+          <h2>Audit Center</h2>
+          <div className="row-actions">
+            <button
+              className="ghost-btn tiny"
+              type="button"
+              disabled={loading || !token}
+              onClick={() => {
+                if (!token) return
+                setLoading(true)
+                setLoadError('')
+                api<AuditCenterPayload>('/audit/center', {}, token)
+                  .then((data) => setAudit(data))
+                  .catch((err) => setLoadError(err instanceof Error ? err.message : 'Could not refresh audit center'))
+                  .finally(() => setLoading(false))
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+        <p className="muted">Unified document, intake, commitment/roadmap, and movement evidence trail for executive review.</p>
+        {audit && (
+          <div className="stats-grid">
+            <div className="stat-item">
+              <p>Documents</p>
+              <h2>{audit.summary.documents_total}</h2>
+            </div>
+            <div className="stat-item">
+              <p>Intake Changes</p>
+              <h2>{audit.summary.intake_changes_total}</h2>
+            </div>
+            <div className="stat-item">
+              <p>Roadmap Changes</p>
+              <h2>{audit.summary.roadmap_changes_total}</h2>
+            </div>
+            <div className="stat-item">
+              <p>Movement Events</p>
+              <h2>{audit.summary.movement_total}</h2>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="panel-card">
+        <div className="line-item">
+          <strong>Filters</strong>
+          {audit?.generated_at && <span className="muted">Generated: {fmtDateTime(audit.generated_at)}</span>}
+        </div>
+        <div className="row-grid">
+          <label>
+            Stage
+            <select value={stage} onChange={(e) => setStage(e.target.value as AuditStageFilter)}>
+              <option value="all">All</option>
+              <option value="documents">Document Register</option>
+              <option value="intake">Intake Change Log</option>
+              <option value="roadmap">Commitment/Roadmap Log</option>
+              <option value="movement">Movement & Approval Log</option>
+            </select>
+          </label>
+          <label>
+            Date From
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          </label>
+          <label>
+            Date To
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          </label>
+          <label>
+            Role / Actor Email
+            <input value={actorFilter} onChange={(e) => setActorFilter(e.target.value)} placeholder="ceo@..." />
+          </label>
+          <label>
+            Role
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="ADMIN">ADMIN</option>
+              <option value="CEO">CEO</option>
+              <option value="VP">VP</option>
+              <option value="BA">BA</option>
+              <option value="PM">PM</option>
+              <option value="PO">PO</option>
+            </select>
+          </label>
+          <label>
+            Project Scope
+            <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)}>
+              <option value="all">All</option>
+              <option value="client">Client</option>
+              <option value="internal">Internal</option>
+            </select>
+          </label>
+          <label>
+            Status / Action
+            <input value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} placeholder="pending, approved, draft" />
+          </label>
+        </div>
+        <label>
+          Search
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="file name, title, reason, field" />
+        </label>
+      </section>
+
+      {loading && (
+        <section className="panel-card">
+          <p className="muted">Loading audit data...</p>
+        </section>
+      )}
+      {loadError && (
+        <section className="panel-card">
+          <p className="error-text">{loadError}</p>
+        </section>
+      )}
+
+      {!loading && !loadError && audit && (stage === 'all' || stage === 'documents') && (
+        <section className="panel-card">
+          <div className="line-item">
+            <h3>Document Register</h3>
+            <button
+              className="ghost-btn tiny"
+              type="button"
+              disabled={documents.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  'audit_document_register.csv',
+                  documents.map((row) => ({
+                    document_id: row.document_id,
+                    file_name: row.file_name,
+                    file_type: row.file_type,
+                    file_hash: row.file_hash,
+                    uploaded_by_email: row.uploaded_by_email || '',
+                    uploaded_by_role: row.uploaded_by_role || '',
+                    created_at: row.created_at,
+                    project_context: row.project_context,
+                    intake_status: row.intake_status,
+                    roadmap_planning_status: row.roadmap_planning_status,
+                  })),
+                )
+              }
+            >
+              Export CSV
+            </button>
+          </div>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>File</th>
+                  <th>Type</th>
+                  <th>Hash</th>
+                  <th>Uploaded By</th>
+                  <th>Created At</th>
+                  <th>Context</th>
+                  <th>Intake</th>
+                  <th>Roadmap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="muted">
+                      No records match current filters.
+                    </td>
+                  </tr>
+                )}
+                {documents.map((row) => (
+                  <tr key={row.document_id}>
+                    <td>{row.document_id}</td>
+                    <td title={row.notes || row.file_name}>{row.file_name}</td>
+                    <td>{(row.file_type || '').toUpperCase()}</td>
+                    <td className="mono">{row.file_hash ? `${row.file_hash.slice(0, 12)}...` : '-'}</td>
+                    <td>{row.uploaded_by_email || '-'}</td>
+                    <td>{fmtDateTime(row.created_at)}</td>
+                    <td>{row.project_context || '-'}</td>
+                    <td>{row.intake_item_id ? `${row.intake_item_id} (${row.intake_status || '-'})` : '-'}</td>
+                    <td>{row.roadmap_item_id ? `${row.roadmap_item_id} (${row.roadmap_planning_status || '-'})` : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {!loading && !loadError && audit && (stage === 'all' || stage === 'intake') && (
+        <section className="panel-card">
+          <div className="line-item">
+            <h3>Intake Change Log</h3>
+            <button
+              className="ghost-btn tiny"
+              type="button"
+              disabled={intakeChanges.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  'audit_intake_changes.csv',
+                  intakeChanges.map((row) => ({
+                    event_id: row.event_id,
+                    intake_item_id: row.intake_item_id,
+                    document_id: row.document_id,
+                    title: row.title,
+                    action: row.action,
+                    status: row.status,
+                    project_context: row.project_context,
+                    actor_email: row.changed_by_email || '',
+                    actor_role: row.changed_by_role || '',
+                    changed_fields: (row.changed_fields || []).join('|'),
+                    created_at: row.created_at,
+                  })),
+                )
+              }
+            >
+              Export CSV
+            </button>
+          </div>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Intake ID</th>
+                  <th>Title</th>
+                  <th>Action</th>
+                  <th>Status</th>
+                  <th>Context</th>
+                  <th>Actor</th>
+                  <th>Fields</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {intakeChanges.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="muted">
+                      No records match current filters.
+                    </td>
+                  </tr>
+                )}
+                {intakeChanges.map((row) => (
+                  <tr key={row.event_id}>
+                    <td>{row.event_id}</td>
+                    <td>{row.intake_item_id}</td>
+                    <td>{row.title || '-'}</td>
+                    <td>{row.action || '-'}</td>
+                    <td>{row.status || '-'}</td>
+                    <td>{row.project_context || '-'}</td>
+                    <td>{row.changed_by_email || '-'}</td>
+                    <td>{(row.changed_fields || []).length ? row.changed_fields.join(', ') : '-'}</td>
+                    <td>{fmtDateTime(row.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {!loading && !loadError && audit && (stage === 'all' || stage === 'roadmap') && (
+        <section className="panel-card">
+          <div className="line-item">
+            <h3>Commitment / Roadmap Change Log</h3>
+            <button
+              className="ghost-btn tiny"
+              type="button"
+              disabled={roadmapChanges.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  'audit_roadmap_changes.csv',
+                  roadmapChanges.map((row) => ({
+                    event_id: row.event_id,
+                    roadmap_item_id: row.roadmap_item_id,
+                    title: row.title,
+                    action: row.action,
+                    project_context: row.project_context,
+                    actor_email: row.changed_by_email || '',
+                    actor_role: row.changed_by_role || '',
+                    changed_fields: (row.changed_fields || []).join('|'),
+                    created_at: row.created_at,
+                  })),
+                )
+              }
+            >
+              Export CSV
+            </button>
+          </div>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Event</th>
+                  <th>Roadmap ID</th>
+                  <th>Title</th>
+                  <th>Action</th>
+                  <th>Context</th>
+                  <th>Actor</th>
+                  <th>Fields</th>
+                  <th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roadmapChanges.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="muted">
+                      No records match current filters.
+                    </td>
+                  </tr>
+                )}
+                {roadmapChanges.map((row) => (
+                  <tr key={row.event_id}>
+                    <td>{row.event_id}</td>
+                    <td>{row.roadmap_item_id}</td>
+                    <td>{row.title || '-'}</td>
+                    <td>{row.action || '-'}</td>
+                    <td>{row.project_context || '-'}</td>
+                    <td>{row.changed_by_email || '-'}</td>
+                    <td>{(row.changed_fields || []).length ? row.changed_fields.join(', ') : '-'}</td>
+                    <td>{fmtDateTime(row.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {!loading && !loadError && audit && (stage === 'all' || stage === 'movement') && (
+        <section className="panel-card">
+          <div className="line-item">
+            <h3>Movement & Approval Log</h3>
+            <button
+              className="ghost-btn tiny"
+              type="button"
+              disabled={movementEvents.length === 0}
+              onClick={() =>
+                downloadCsv(
+                  'audit_movement_events.csv',
+                  movementEvents.map((row) => ({
+                    request_id: row.request_id,
+                    plan_item_id: row.plan_item_id,
+                    bucket_item_id: row.bucket_item_id,
+                    title: row.title,
+                    status: row.status,
+                    request_type: row.request_type,
+                    project_context: row.project_context,
+                    requested_by_email: row.requested_by_email || '',
+                    requested_by_role: row.requested_by_role || '',
+                    requested_at: row.requested_at,
+                    decided_by_email: row.decided_by_email || '',
+                    decided_by_role: row.decided_by_role || '',
+                    decided_at: row.decided_at || '',
+                    executed_at: row.executed_at || '',
+                    reason: row.reason,
+                    blocker: row.blocker,
+                    decision_reason: row.decision_reason,
+                  })),
+                )
+              }
+            >
+              Export CSV
+            </button>
+          </div>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Request</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Type</th>
+                  <th>Context</th>
+                  <th>Requested By</th>
+                  <th>Requested At</th>
+                  <th>Decided By</th>
+                  <th>Decision</th>
+                </tr>
+              </thead>
+              <tbody>
+                {movementEvents.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="muted">
+                      No records match current filters.
+                    </td>
+                  </tr>
+                )}
+                {movementEvents.map((row) => (
+                  <tr key={row.request_id}>
+                    <td>{row.request_id}</td>
+                    <td title={row.reason || row.title}>{row.title || '-'}</td>
+                    <td>{row.status || '-'}</td>
+                    <td>{row.request_type || '-'}</td>
+                    <td>{row.project_context || '-'}</td>
+                    <td>{row.requested_by_email || '-'}</td>
+                    <td>{fmtDateTime(row.requested_at)}</td>
+                    <td>{row.decided_by_email || '-'}</td>
+                    <td>{row.decision_reason || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </main>
+  )
 }
 
 function IntakePage({

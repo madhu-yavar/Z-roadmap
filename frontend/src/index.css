@@ -4088,6 +4088,43 @@ button.activity-tag-chip:hover {
   font-size: 0.82rem;
 }
 
+.page-shell {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.stats-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.stats-grid .stat-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.stats-grid .stat-item p {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.stats-grid .stat-item h2 {
+  margin: 6px 0 0;
+  font-size: 1.2rem;
+}
+
+.row-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
 @media (max-width: 640px) {
   .split-2 {
     grid-template-columns: 1fr;
@@ -4098,6 +4135,14 @@ button.activity-tag-chip:hover {
   }
 
   .split-4 {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row-grid {
     grid-template-columns: 1fr;
   }
 

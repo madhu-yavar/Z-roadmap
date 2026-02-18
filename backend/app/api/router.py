@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.routes import auth, chat, dashboard, documents, features, intake, projects, roadmap, settings, users
+from app.api.routes import audit, auth, chat, dashboard, documents, features, intake, projects, roadmap, settings, users
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -13,3 +13,4 @@ api_router.include_router(roadmap.router)
 api_router.include_router(settings.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(chat.router)
+api_router.include_router(audit.router)
