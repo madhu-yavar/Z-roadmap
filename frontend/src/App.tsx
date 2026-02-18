@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, FormEvent, SetStateAction } from 'react'
 import { Navigate, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
+  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -93,6 +96,7 @@ type IntakeItem = {
   rnd_risk_level: string
   status: string
   roadmap_item_id: number | null
+  created_at?: string
 }
 
 type RoadmapItem = {
@@ -2704,8 +2708,11 @@ function App() {
           element={
             <DashboardPage
               dashboard={dashboard}
+              intakeItems={intakeItems}
+              roadmapItems={roadmapItems}
               roadmapPlanItems={roadmapPlanItems}
               governanceConfig={governanceConfig}
+              movementRequests={roadmapMovementRequests}
             />
           }
         />
@@ -2933,17 +2940,174 @@ function App() {
 
 type DashboardProps = {
   dashboard: Dashboard | null
+  intakeItems: IntakeItem[]
+  roadmapItems: RoadmapItem[]
   roadmapPlanItems: RoadmapPlanItem[]
   governanceConfig: GovernanceConfig | null
+  movementRequests: RoadmapMovementRequest[]
 }
 
-function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: DashboardProps) {
-  const count = (m: Record<string, number> | undefined, key: string) => Number(m?.[key] || 0)
+function DashboardPage({ dashboard, intakeItems, roadmapItems, roadmapPlanItems, governanceConfig, movementRequests }: DashboardProps) {
+  const [cadence, setCadence] = useState<'month' | 'quarter'>('month')
+  const [windowSize, setWindowSize] = useState(6)
   const today = useMemo(() => new Date(), [])
-  const chartGridStroke = '#edf1f6'
-  const chartColorPrimary = '#4b5563'
-  const chartColorSecondary = '#cbd5e1'
-  const chartColorMuted = '#9ca3af'
+  const chartGridStroke = '#e8edf5'
+  const chartColorPrimary = '#0f766e'
+  const chartColorSecondary = '#f59e0b'
+  const chartColorMuted = '#475569'
+  const chartColorAccent = '#0ea5e9'
+  const chartColorSlate = '#94a3b8'
+  const chartColorSuccess = '#16a34a'
+  const chartColorWarn = '#f59e0b'
+  const chartColorError = '#dc2626'
+
+  useEffect(() => {
+    if (cadence === 'month' && ![6, 12].includes(windowSize)) setWindowSize(6)
+    if (cadence === 'quarter' && ![4, 8].includes(windowSize)) setWindowSize(4)
+  }, [cadence, windowSize])
+
+  const trendBuckets = useMemo(() => {
+    const now = new Date()
+    const buckets: Array<{
+      key: string
+      label: string
+      startMs: number
+      endMs: number
+    }> = []
+    for (let i = windowSize - 1; i >= 0; i--) {
+      let start: Date
+      if (cadence === 'month') {
+        start = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      } else {
+        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3
+        start = new Date(now.getFullYear(), quarterStartMonth - i * 3, 1)
+      }
+      const end =
+        cadence === 'month'
+          ? new Date(start.getFullYear(), start.getMonth() + 1, 0, 23, 59, 59, 999)
+          : new Date(start.getFullYear(), start.getMonth() + 3, 0, 23, 59, 59, 999)
+      const label =
+        cadence === 'month'
+          ? start.toLocaleDateString(undefined, { month: 'short', year: '2-digit' })
+          : `Q${Math.floor(start.getMonth() / 3) + 1} ${String(start.getFullYear()).slice(-2)}`
+      const key =
+        cadence === 'month'
+          ? `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}`
+          : `${start.getFullYear()}-Q${Math.floor(start.getMonth() / 3) + 1}`
+      buckets.push({ key, label, startMs: start.getTime(), endMs: end.getTime() })
+    }
+    return buckets
+  }, [cadence, windowSize])
+
+  const trendSeries = useMemo(() => {
+    const rows = trendBuckets.map((bucket) => ({
+      period: bucket.label,
+      period_key: bucket.key,
+      client: 0,
+      internal: 0,
+      total: 0,
+      movement_total: 0,
+      movement_pending: 0,
+      movement_approved: 0,
+      movement_rejected: 0,
+      rnd_intake: 0,
+      rnd_commitments: 0,
+      rnd_roadmap: 0,
+      ai_intake: 0,
+      ai_commitments: 0,
+      ai_roadmap: 0,
+    }))
+
+    const bucketIndex = (raw: string | null | undefined): number => {
+      const date = parseIsoDate(raw || '')
+      if (!date) return -1
+      const ts = date.getTime()
+      return trendBuckets.findIndex((bucket) => ts >= bucket.startMs && ts <= bucket.endMs)
+    }
+
+    for (const item of roadmapPlanItems) {
+      const idx = bucketIndex(item.planned_start_date || item.entered_roadmap_at || item.created_at)
+      if (idx < 0) continue
+      const row = rows[idx]
+      if (item.project_context === 'client') row.client += 1
+      else row.internal += 1
+      row.total += 1
+      if ((item.delivery_mode || '').toLowerCase() === 'rnd') row.rnd_roadmap += 1
+      if ((item.ai_fte || 0) > 0 || hasAiTagInActivities(item.activities || [])) row.ai_roadmap += 1
+    }
+
+    for (const item of roadmapItems) {
+      const idx = bucketIndex(item.created_at)
+      if (idx < 0) continue
+      const row = rows[idx]
+      if ((item.delivery_mode || '').toLowerCase() === 'rnd') row.rnd_commitments += 1
+      if ((item.ai_fte || 0) > 0 || hasAiTagInActivities(item.activities || [])) row.ai_commitments += 1
+    }
+
+    for (const item of intakeItems) {
+      const idx = bucketIndex(item.created_at)
+      if (idx < 0) continue
+      const row = rows[idx]
+      if ((item.delivery_mode || '').toLowerCase() === 'rnd') row.rnd_intake += 1
+      if (hasAiTagInActivities(item.activities || [])) row.ai_intake += 1
+    }
+
+    for (const req of movementRequests) {
+      const idx = bucketIndex(req.created_at || req.requested_at)
+      if (idx < 0) continue
+      const row = rows[idx]
+      row.movement_total += 1
+      const status = (req.status || '').toLowerCase()
+      if (status === 'approved') row.movement_approved += 1
+      else if (status === 'rejected') row.movement_rejected += 1
+      else row.movement_pending += 1
+    }
+
+    return rows
+  }, [trendBuckets, roadmapPlanItems, roadmapItems, intakeItems, movementRequests])
+
+  const rndStageChart = useMemo(
+    () =>
+      trendSeries.map((row) => ({
+        period: row.period,
+        Intake: row.rnd_intake,
+        Commitments: row.rnd_commitments,
+        Roadmap: row.rnd_roadmap,
+      })),
+    [trendSeries],
+  )
+
+  const aiStageChart = useMemo(
+    () =>
+      trendSeries.map((row) => ({
+        period: row.period,
+        Intake: row.ai_intake,
+        Commitments: row.ai_commitments,
+        Roadmap: row.ai_roadmap,
+      })),
+    [trendSeries],
+  )
+
+  const movementChart = useMemo(
+    () =>
+      trendSeries.map((row) => ({
+        period: row.period,
+        Approved: row.movement_approved,
+        Pending: row.movement_pending,
+        Rejected: row.movement_rejected,
+      })),
+    [trendSeries],
+  )
+
+  const rndWindowTotal = useMemo(
+    () => rndStageChart.reduce((acc, row) => acc + row.Intake + row.Commitments + row.Roadmap, 0),
+    [rndStageChart],
+  )
+  const aiWindowTotal = useMemo(
+    () => aiStageChart.reduce((acc, row) => acc + row.Intake + row.Commitments + row.Roadmap, 0),
+    [aiStageChart],
+  )
+
   const capacitySnapshot = useMemo(() => {
     const usage = {
       client: emptyRoleTotals(),
@@ -2977,69 +3141,18 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
     }
   }, [roadmapPlanItems, governanceConfig, today])
 
-  const stageData = [
-    { stage: 'Intake', count: dashboard?.intake_total || 0 },
-    { stage: 'Commitments', count: dashboard?.commitments_total || 0 },
-    { stage: 'Roadmap', count: dashboard?.roadmap_total || 0 },
-  ]
-  const contextData = [
-    {
-      stage: 'Intake',
-      client: count(dashboard?.intake_by_context, 'client'),
-      internal: count(dashboard?.intake_by_context, 'internal'),
-    },
-    {
-      stage: 'Commitments',
-      client: count(dashboard?.commitments_by_context, 'client'),
-      internal: count(dashboard?.commitments_by_context, 'internal'),
-    },
-    {
-      stage: 'Roadmap',
-      client: count(dashboard?.roadmap_by_context, 'client'),
-      internal: count(dashboard?.roadmap_by_context, 'internal'),
-    },
-  ]
-  const modeData = [
-    {
-      stage: 'Intake',
-      standard: count(dashboard?.intake_by_mode, 'standard'),
-      rnd: count(dashboard?.intake_by_mode, 'rnd'),
-    },
-    {
-      stage: 'Commitments',
-      standard: count(dashboard?.commitments_by_mode, 'standard'),
-      rnd: count(dashboard?.commitments_by_mode, 'rnd'),
-    },
-    {
-      stage: 'Roadmap',
-      standard: count(dashboard?.roadmap_by_mode, 'standard'),
-      rnd: count(dashboard?.roadmap_by_mode, 'rnd'),
-    },
-  ]
-  const priorityData = [
-    {
-      priority: 'High',
-      commitments: count(dashboard?.commitments_by_priority, 'high'),
-      roadmap: count(dashboard?.roadmap_by_priority, 'high'),
-    },
-    {
-      priority: 'Medium',
-      commitments: count(dashboard?.commitments_by_priority, 'medium'),
-      roadmap: count(dashboard?.roadmap_by_priority, 'medium'),
-    },
-    {
-      priority: 'Low',
-      commitments: count(dashboard?.commitments_by_priority, 'low'),
-      roadmap: count(dashboard?.roadmap_by_priority, 'low'),
-    },
-  ]
   const capacityAlert = dashboard?.capacity_governance_alert
   const capacityCritical = capacityAlert?.role_alerts.filter((r) => r.status === 'CRITICAL') || []
   const capacityWarning = capacityAlert?.role_alerts.filter((r) => r.status === 'WARNING') || []
+  const windowLabel = cadence === 'month' ? `${windowSize} months` : `${windowSize} quarters`
+  const cadenceLabel = cadence === 'month' ? 'Month-on-Month' : 'Quarter-on-Quarter'
+  const movementTotal = dashboard?.roadmap_movement_total ?? 0
+  const movementApproved = dashboard?.roadmap_movement_approved ?? 0
+  const movementApprovalRate = movementTotal > 0 ? (movementApproved / movementTotal) * 100 : 0
 
   return (
-    <main className="page-wrap dashboard-minimal">
-      <section className="stats-row">
+    <main className="page-wrap dashboard-minimal dashboard-modern">
+      <section className="stats-row dashboard-kpi-grid">
         <article className="metric-card">
           <p>Intake Queue</p>
           <h2>{dashboard?.intake_total ?? 0}</h2>
@@ -3062,71 +3175,77 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
         </article>
         <article className="metric-card">
           <p>R&D Pipeline</p>
-          <h2>
-            {(dashboard?.rnd_intake_total ?? 0) + (dashboard?.rnd_commitments_total ?? 0) + (dashboard?.rnd_roadmap_total ?? 0)}
-          </h2>
+          <h2>{rndWindowTotal}</h2>
+          <span className="muted">{windowLabel}</span>
         </article>
         <article className="metric-card">
           <p>AI Pipeline</p>
-          <h2>
-            {(dashboard?.ai_intake_total ?? 0) + (dashboard?.ai_commitments_total ?? 0) + (dashboard?.ai_roadmap_total ?? 0)}
-          </h2>
+          <h2>{aiWindowTotal}</h2>
+          <span className="muted">{windowLabel}</span>
+        </article>
+        <article className="metric-card">
+          <p>Movement Approval Rate</p>
+          <h2>{movementApprovalRate.toFixed(0)}%</h2>
+          <span className="muted">{movementApproved}/{movementTotal} approved</span>
         </article>
       </section>
 
-      <section className="card-grid two">
-        <article className="panel-card">
-          <h3>R&D Stage Split</h3>
-          <div className="line-item">
-            <span className="muted">Intake (R&D)</span>
-            <strong>{dashboard?.rnd_intake_total ?? 0}</strong>
+      <section className="panel-card dashboard-toolbar-card">
+        <div className="dashboard-toolbar-row">
+          <div>
+            <h3>Governance Trend Lens</h3>
+            <p className="muted">Charts are driven by {cadenceLabel} over the last {windowLabel}.</p>
           </div>
-          <div className="line-item">
-            <span className="muted">Commitments (R&D)</span>
-            <strong>{dashboard?.rnd_commitments_total ?? 0}</strong>
+          <div className="dashboard-filter-group">
+            <div className="segmented-control" role="group" aria-label="Cadence">
+              <button
+                type="button"
+                className={cadence === 'month' ? 'active' : ''}
+                onClick={() => setCadence('month')}
+              >
+                MoM
+              </button>
+              <button
+                type="button"
+                className={cadence === 'quarter' ? 'active' : ''}
+                onClick={() => setCadence('quarter')}
+              >
+                QoQ
+              </button>
+            </div>
+            <div className="segmented-control" role="group" aria-label="Window">
+              {(cadence === 'month' ? [6, 12] : [4, 8]).map((size) => (
+                <button
+                  key={`window-${size}`}
+                  type="button"
+                  className={windowSize === size ? 'active' : ''}
+                  onClick={() => setWindowSize(size)}
+                >
+                  {cadence === 'month' ? `${size}M` : `${size}Q`}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="line-item">
-            <span className="muted">Roadmap (R&D)</span>
-            <strong>{dashboard?.rnd_roadmap_total ?? 0}</strong>
-          </div>
-        </article>
-        <article className="panel-card">
-          <h3>AI Stage Split</h3>
-          <div className="line-item">
-            <span className="muted">Intake (AI-tagged)</span>
-            <strong>{dashboard?.ai_intake_total ?? 0}</strong>
-          </div>
-          <div className="line-item">
-            <span className="muted">Commitments (AI-loaded)</span>
-            <strong>{dashboard?.ai_commitments_total ?? 0}</strong>
-          </div>
-          <div className="line-item">
-            <span className="muted">Roadmap (AI-loaded)</span>
-            <strong>{dashboard?.ai_roadmap_total ?? 0}</strong>
-          </div>
-        </article>
+        </div>
       </section>
 
       <section className="card-grid two">
         <article className="panel-card">
           <h3>Roadmap Movement Governance</h3>
-          <div className="line-item">
-            <span className="muted">Total Movements</span>
-            <strong>{dashboard?.roadmap_movement_total ?? 0}</strong>
-          </div>
-          <div className="line-item">
-            <span className="muted">Approved</span>
-            <strong>{dashboard?.roadmap_movement_approved ?? 0}</strong>
-          </div>
-          <div className="line-item">
-            <span className="muted">Rejected</span>
-            <strong>{dashboard?.roadmap_movement_rejected ?? 0}</strong>
-          </div>
-          <div className="line-item">
-            <span className="muted">Pending CEO Approval</span>
-            <strong className={(dashboard?.roadmap_movement_pending || 0) > 0 ? 'capacity-meter-state warn' : ''}>
-              {dashboard?.roadmap_movement_pending ?? 0}
-            </strong>
+          <p className="muted">Deterministic movement outcomes by {cadence === 'month' ? 'month' : 'quarter'}.</p>
+          <div className="chart-wrap chart-wrap-tall">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={movementChart}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                <XAxis dataKey="period" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="Approved" stackId="movement" fill={chartColorSuccess} radius={[8, 8, 0, 0]} />
+                <Bar dataKey="Pending" stackId="movement" fill={chartColorWarn} />
+                <Bar dataKey="Rejected" stackId="movement" fill={chartColorError} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </article>
         <article className="panel-card">
@@ -3186,6 +3305,29 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
           ) : (
             <p className="muted">Governance configuration is missing. Set team sizes, efficiency, and quotas in Settings.</p>
           )}
+          <div className="chart-wrap">
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={trendSeries}>
+                <defs>
+                  <linearGradient id="clientArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColorPrimary} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={chartColorPrimary} stopOpacity={0.04} />
+                  </linearGradient>
+                  <linearGradient id="internalArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColorSecondary} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={chartColorSecondary} stopOpacity={0.04} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                <XAxis dataKey="period" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="client" stroke={chartColorPrimary} fill="url(#clientArea)" strokeWidth={2.1} />
+                <Area type="monotone" dataKey="internal" stroke={chartColorSecondary} fill="url(#internalArea)" strokeWidth={2.1} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </article>
         <article className="panel-card">
           <h3>Internal Portfolio Weekly Capacity</h3>
@@ -3209,64 +3351,38 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
 
       <section className="card-grid two">
         <article className="panel-card">
-          <h3>Stage Volume</h3>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={stageData}>
+          <h3>R&D Stage Split</h3>
+          <p className="muted">Placed below portfolio capacity as requested. Interactive with {cadence === 'month' ? 'MoM' : 'QoQ'} filter.</p>
+          <div className="chart-wrap chart-wrap-tall">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={rndStageChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
-                <XAxis dataKey="stage" />
+                <XAxis dataKey="period" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="count" fill={chartColorPrimary} radius={[4, 4, 0, 0]} />
+                <Legend />
+                <Bar dataKey="Intake" stackId="rnd" fill={chartColorPrimary} radius={[8, 8, 0, 0]} />
+                <Bar dataKey="Commitments" stackId="rnd" fill={chartColorAccent} />
+                <Bar dataKey="Roadmap" stackId="rnd" fill={chartColorMuted} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </article>
 
         <article className="panel-card">
-          <h3>Classification by Context</h3>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={contextData}>
+          <h3>AI Stage Split</h3>
+          <p className="muted">AI-tagged progression across Intake, Commitment, and Roadmap stages.</p>
+          <div className="chart-wrap chart-wrap-tall">
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={aiStageChart}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
-                <XAxis dataKey="stage" />
+                <XAxis dataKey="period" />
                 <YAxis allowDecimals={false} />
                 <Tooltip />
-                <Bar dataKey="client" fill={chartColorPrimary} />
-                <Bar dataKey="internal" fill={chartColorSecondary} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </article>
-      </section>
-
-      <section className="card-grid two">
-        <article className="panel-card">
-          <h3>Classification by Mode</h3>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={modeData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
-                <XAxis dataKey="stage" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="standard" fill={chartColorPrimary} />
-                <Bar dataKey="rnd" fill={chartColorMuted} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </article>
-        <article className="panel-card">
-          <h3>Priority Split (Commitments vs Roadmap)</h3>
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={priorityData}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
-                <XAxis dataKey="priority" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="commitments" fill={chartColorPrimary} />
-                <Bar dataKey="roadmap" fill={chartColorSecondary} />
+                <Legend />
+                <Bar dataKey="Intake" stackId="ai" fill={chartColorPrimary} radius={[8, 8, 0, 0]} />
+                <Bar dataKey="Commitments" stackId="ai" fill={chartColorAccent} />
+                <Bar dataKey="Roadmap" stackId="ai" fill={chartColorSlate} />
               </BarChart>
             </ResponsiveContainer>
           </div>

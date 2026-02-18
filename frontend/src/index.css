@@ -572,6 +572,118 @@ p {
   background: #dc2626;
 }
 
+.dashboard-modern {
+  background:
+    radial-gradient(circle at 0% 0%, #e8fffa 0%, transparent 28%),
+    radial-gradient(circle at 100% 0%, #fff6df 0%, transparent 26%),
+    #f5f8fc;
+}
+
+.dashboard-modern .dashboard-kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+}
+
+.dashboard-modern .metric-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 96px;
+}
+
+.dashboard-modern .metric-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -24px -24px auto;
+  width: 90px;
+  height: 90px;
+  border-radius: 999px;
+  background: linear-gradient(130deg, rgba(14, 165, 233, 0.18), rgba(15, 118, 110, 0));
+  pointer-events: none;
+}
+
+.dashboard-modern .metric-card .muted {
+  font-size: 0.72rem;
+}
+
+.dashboard-modern .dashboard-toolbar-card {
+  padding: 14px 16px;
+}
+
+.dashboard-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dashboard-toolbar-row h3 {
+  margin: 0;
+}
+
+.dashboard-filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.segmented-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid #dbe3ef;
+  background: #fff;
+}
+
+.segmented-control button {
+  border: 0;
+  background: transparent;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.segmented-control button:hover {
+  background: #f1f5f9;
+}
+
+.segmented-control button.active {
+  background: linear-gradient(135deg, #0ea5e9, #0f766e);
+  color: #fff;
+}
+
+.dashboard-modern .chart-wrap {
+  border: 1px solid #edf2f9;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+}
+
+.dashboard-modern .chart-wrap.chart-wrap-tall {
+  height: 280px;
+}
+
+.dashboard-modern .panel-card > p.muted {
+  margin: 0;
+}
+
+@media (max-width: 960px) {
+  .dashboard-toolbar-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .dashboard-filter-group {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
+
 /* ========== Intake Queue Redesign ========== */
 .intake-queue-card {
   min-height: 400px;
