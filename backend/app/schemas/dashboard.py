@@ -25,10 +25,16 @@ class DashboardOut(BaseModel):
     intake_total: int
     intake_understanding_pending: int
     intake_draft: int
+    rnd_intake_total: int
+    ai_intake_total: int
     commitments_total: int
     commitments_ready: int
     commitments_locked: int
+    rnd_commitments_total: int
+    ai_commitments_total: int
     roadmap_total: int
+    rnd_roadmap_total: int
+    ai_roadmap_total: int
     roadmap_movement_pending: int
     roadmap_movement_approved: int
     roadmap_movement_rejected: int

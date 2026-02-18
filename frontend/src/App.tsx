@@ -37,10 +37,16 @@ type Dashboard = {
   intake_total: number
   intake_understanding_pending: number
   intake_draft: number
+  rnd_intake_total: number
+  ai_intake_total: number
   commitments_total: number
   commitments_ready: number
   commitments_locked: number
+  rnd_commitments_total: number
+  ai_commitments_total: number
   roadmap_total: number
+  rnd_roadmap_total: number
+  ai_roadmap_total: number
   roadmap_movement_pending: number
   roadmap_movement_approved: number
   roadmap_movement_rejected: number
@@ -715,6 +721,19 @@ function inferActivityTag(text: string): ActivityTag {
   return 'BE'
 }
 
+function hasAiTagInActivities(items: string[]): boolean {
+  return (items || []).some((entry) => parseActivityEntry(entry).tags.includes('AI'))
+}
+
+function rndOutcomeLabel(nextGate: string): string {
+  const val = (nextGate || '').trim().toLowerCase()
+  if (val === 'productize') return 'MVP Candidate'
+  if (val === 'stop') return 'Research Only'
+  if (val === 'pivot') return 'Research Pivot'
+  if (val === 'continue') return 'R&D In Progress'
+  return 'Gate Pending'
+}
+
 function ensureTaggedActivity(value: string): string {
   const parsed = parseActivityEntry(value)
   const text = (parsed.text || value || '').trim()
@@ -1250,7 +1269,9 @@ function App() {
   }, [selectedRoadmapItem])
 
   const isCEO = currentUser?.role === 'CEO'
+  const isVP = currentUser?.role === 'VP'
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
+  const canViewRndLab = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
   const canViewAuditCenter = currentUser?.role === 'ADMIN' || currentUser?.role === 'CEO' || currentUser?.role === 'VP'
 
   async function loadData(activeToken: string) {
@@ -2511,6 +2532,11 @@ function App() {
           <NavLink to="/roadmap-agent" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
             Roadmap
           </NavLink>
+          {canViewRndLab && (
+            <NavLink to="/rnd-lab" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
+              R&D Lab
+            </NavLink>
+          )}
           <NavLink to="/detailed-roadmap" className={({ isActive }) => (isActive ? 'top-link active' : 'top-link')}>
             Analytics
           </NavLink>
@@ -2687,6 +2713,7 @@ function App() {
           path="/intake"
           element={
             <IntakePage
+              canEnterRndFromIntake={Boolean(isVP)}
               token={token}
               documents={documents}
               roadmapItems={roadmapItems}
@@ -2792,6 +2819,22 @@ function App() {
               ceoMoveRoadmapPlanItem={ceoMoveRoadmapPlanItem}
               validateCapacity={validateCapacity}
               downloadRoadmapPlanExcel={downloadRoadmapPlanExcel}
+              busy={busy}
+            />
+          }
+        />
+        <Route
+          path="/rnd-lab"
+          element={
+            <RndLabPage
+              currentUserRole={currentUser?.role || 'PM'}
+              documents={documents}
+              intakeByDocument={intakeByDocument}
+              intakeItems={intakeItems}
+              roadmapItems={roadmapItems}
+              roadmapPlanItems={roadmapPlanItems}
+              analyzeDocument={analyzeDocument}
+              createManualIntake={createManualIntake}
               busy={busy}
             />
           }
@@ -3017,6 +3060,51 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
           <p>Movement Pending</p>
           <h2>{dashboard?.roadmap_movement_pending ?? 0}</h2>
         </article>
+        <article className="metric-card">
+          <p>R&D Pipeline</p>
+          <h2>
+            {(dashboard?.rnd_intake_total ?? 0) + (dashboard?.rnd_commitments_total ?? 0) + (dashboard?.rnd_roadmap_total ?? 0)}
+          </h2>
+        </article>
+        <article className="metric-card">
+          <p>AI Pipeline</p>
+          <h2>
+            {(dashboard?.ai_intake_total ?? 0) + (dashboard?.ai_commitments_total ?? 0) + (dashboard?.ai_roadmap_total ?? 0)}
+          </h2>
+        </article>
+      </section>
+
+      <section className="card-grid two">
+        <article className="panel-card">
+          <h3>R&D Stage Split</h3>
+          <div className="line-item">
+            <span className="muted">Intake (R&D)</span>
+            <strong>{dashboard?.rnd_intake_total ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Commitments (R&D)</span>
+            <strong>{dashboard?.rnd_commitments_total ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Roadmap (R&D)</span>
+            <strong>{dashboard?.rnd_roadmap_total ?? 0}</strong>
+          </div>
+        </article>
+        <article className="panel-card">
+          <h3>AI Stage Split</h3>
+          <div className="line-item">
+            <span className="muted">Intake (AI-tagged)</span>
+            <strong>{dashboard?.ai_intake_total ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Commitments (AI-loaded)</span>
+            <strong>{dashboard?.ai_commitments_total ?? 0}</strong>
+          </div>
+          <div className="line-item">
+            <span className="muted">Roadmap (AI-loaded)</span>
+            <strong>{dashboard?.ai_roadmap_total ?? 0}</strong>
+          </div>
+        </article>
       </section>
 
       <section className="card-grid two">
@@ -3188,7 +3276,441 @@ function DashboardPage({ dashboard, roadmapPlanItems, governanceConfig }: Dashbo
   )
 }
 
+type RndLabProps = {
+  currentUserRole: SystemRole
+  documents: DocumentItem[]
+  intakeByDocument: Map<number, IntakeItem>
+  intakeItems: IntakeItem[]
+  roadmapItems: RoadmapItem[]
+  roadmapPlanItems: RoadmapPlanItem[]
+  analyzeDocument: (documentId: number, seed?: IntakeSeedMeta) => Promise<void>
+  createManualIntake: (payload: ManualIntakeIn) => Promise<void>
+  busy: boolean
+}
+
+function RndLabPage({
+  currentUserRole,
+  documents,
+  intakeByDocument,
+  intakeItems,
+  roadmapItems,
+  roadmapPlanItems,
+  analyzeDocument,
+  createManualIntake,
+  busy,
+}: RndLabProps) {
+  const isVP = currentUserRole === 'VP'
+  const isCEO = currentUserRole === 'CEO'
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualForm, setManualForm] = useState<ManualIntakeIn>({
+    title: '',
+    scope: '',
+    activities: [],
+    priority: 'medium',
+    project_context: 'internal',
+    initiative_type: 'new_feature',
+    delivery_mode: 'rnd',
+    rnd_hypothesis: '',
+    rnd_experiment_goal: '',
+    rnd_success_criteria: '',
+    rnd_timebox_weeks: null,
+    rnd_decision_date: '',
+    rnd_next_gate: '',
+    rnd_risk_level: '',
+  })
+
+  const rndIntake = useMemo(
+    () => intakeItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
+    [intakeItems],
+  )
+  const rndCommitments = useMemo(
+    () => roadmapItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
+    [roadmapItems],
+  )
+  const rndRoadmap = useMemo(
+    () => roadmapPlanItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
+    [roadmapPlanItems],
+  )
+  const aiInRnd = useMemo(
+    () => ({
+      intake: rndIntake.filter((item) => hasAiTagInActivities(item.activities || [])).length,
+      commitments: rndCommitments.filter((item) => (item.ai_fte || 0) > 0 || hasAiTagInActivities(item.activities || [])).length,
+      roadmap: rndRoadmap.filter((item) => (item.ai_fte || 0) > 0 || hasAiTagInActivities(item.activities || [])).length,
+    }),
+    [rndIntake, rndCommitments, rndRoadmap],
+  )
+  const unassignedDocs = useMemo(
+    () => documents.filter((doc) => !intakeByDocument.has(doc.id)),
+    [documents, intakeByDocument],
+  )
+
+  if (!isVP && !isCEO) {
+    return (
+      <main className="page-shell">
+        <section className="panel-card">
+          <h3>R&D Lab</h3>
+          <p className="error-text">Access denied. R&D Lab is available to CEO/VP roles.</p>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <>
+      <main className="page-shell">
+        <section className="panel-card">
+          <div className="line-item">
+            <h2>R&D Lab</h2>
+            <span className="muted">VP-owned intake for AI/R&D experiments and MVP conversion flow.</span>
+          </div>
+          <div className="stats-grid">
+            <div className="stat-item">
+              <p>R&D Intake</p>
+              <h2>{rndIntake.length}</h2>
+            </div>
+            <div className="stat-item">
+              <p>R&D Commitments</p>
+              <h2>{rndCommitments.length}</h2>
+            </div>
+            <div className="stat-item">
+              <p>R&D Roadmap</p>
+              <h2>{rndRoadmap.length}</h2>
+            </div>
+            <div className="stat-item">
+              <p>AI in R&D (All Stages)</p>
+              <h2>{aiInRnd.intake + aiInRnd.commitments + aiInRnd.roadmap}</h2>
+            </div>
+          </div>
+          <div className="line-item">
+            <span className="muted">AI-tagged R&D Intake: {aiInRnd.intake}</span>
+            <span className="muted">AI-loaded R&D Commitments: {aiInRnd.commitments}</span>
+            <span className="muted">AI-loaded R&D Roadmap: {aiInRnd.roadmap}</span>
+          </div>
+        </section>
+
+        <section className="panel-card">
+          <div className="line-item">
+            <h3>R&D Intake Entry (VP Only)</h3>
+            {isVP && (
+              <button className="ghost-btn tiny" type="button" onClick={() => setManualOpen(true)}>
+                Manual R&D Intake
+              </button>
+            )}
+          </div>
+          {!isVP && (
+            <p className="muted">
+              {isCEO
+                ? 'CEO can review R&D pipeline here. VP role is required to create R&D intake.'
+                : 'R&D intake creation is restricted to VP role.'}
+            </p>
+          )}
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Document</th>
+                  <th>Type</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {unassignedDocs.length === 0 && (
+                  <tr>
+                    <td colSpan={3} className="muted">
+                      No unassigned uploaded documents available.
+                    </td>
+                  </tr>
+                )}
+                {unassignedDocs.map((doc) => (
+                  <tr key={doc.id}>
+                    <td>{doc.file_name}</td>
+                    <td>{(doc.file_type || '').toUpperCase()}</td>
+                    <td>
+                      <button
+                        className="ghost-btn tiny"
+                        type="button"
+                        disabled={busy || !isVP}
+                        onClick={() =>
+                          analyzeDocument(doc.id, {
+                            priority: 'medium',
+                            project_context: 'internal',
+                            initiative_type: 'new_feature',
+                            delivery_mode: 'rnd',
+                            rnd_hypothesis: '',
+                            rnd_experiment_goal: '',
+                            rnd_success_criteria: '',
+                            rnd_timebox_weeks: null,
+                            rnd_decision_date: '',
+                            rnd_next_gate: '',
+                            rnd_risk_level: '',
+                          })
+                        }
+                      >
+                        Start R&D Intake
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel-card">
+          <h3>R&D Intake Queue</h3>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Intake ID</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Context</th>
+                  <th>Next Gate</th>
+                  <th>Outcome</th>
+                  <th>Risk</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rndIntake.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="muted">
+                      No R&D intake items yet.
+                    </td>
+                  </tr>
+                )}
+                {rndIntake.map((item) => (
+                  <tr key={`rnd-intake-${item.id}`}>
+                    <td>{item.id}</td>
+                    <td>{item.title || '-'}</td>
+                    <td>{item.status || '-'}</td>
+                    <td>{item.project_context || '-'}</td>
+                    <td>{item.rnd_next_gate || '-'}</td>
+                    <td>{rndOutcomeLabel(item.rnd_next_gate)}</td>
+                    <td>{item.rnd_risk_level || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel-card">
+          <h3>R&D Commitments</h3>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Title</th>
+                  <th>Priority</th>
+                  <th>AI FTE</th>
+                  <th>Next Gate</th>
+                  <th>Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rndCommitments.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      No R&D commitments yet.
+                    </td>
+                  </tr>
+                )}
+                {rndCommitments.map((item) => (
+                  <tr key={`rnd-commit-${item.id}`}>
+                    <td>{item.id}</td>
+                    <td>{item.title || '-'}</td>
+                    <td>{item.priority || '-'}</td>
+                    <td>{(item.ai_fte || 0).toFixed(1)}</td>
+                    <td>{item.rnd_next_gate || '-'}</td>
+                    <td>{rndOutcomeLabel(item.rnd_next_gate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="panel-card">
+          <h3>R&D Roadmap</h3>
+          <div className="intake-table-wrap">
+            <table className="docs-table">
+              <thead>
+                <tr>
+                  <th>Plan ID</th>
+                  <th>Title</th>
+                  <th>Status</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>AI FTE</th>
+                  <th>Outcome</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rndRoadmap.length === 0 && (
+                  <tr>
+                    <td colSpan={7} className="muted">
+                      No R&D roadmap entries yet.
+                    </td>
+                  </tr>
+                )}
+                {rndRoadmap.map((item) => (
+                  <tr key={`rnd-roadmap-${item.id}`}>
+                    <td>{item.id}</td>
+                    <td>{item.title || '-'}</td>
+                    <td>{item.planning_status || '-'}</td>
+                    <td>{item.planned_start_date || '-'}</td>
+                    <td>{item.planned_end_date || '-'}</td>
+                    <td>{(item.ai_fte || 0).toFixed(1)}</td>
+                    <td>{rndOutcomeLabel(item.rnd_next_gate)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+
+      {manualOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <h3>Manual R&D Intake (VP)</h3>
+            <div className="stack">
+              <label>
+                Title
+                <input value={manualForm.title} onChange={(e) => setManualForm((s) => ({ ...s, title: e.target.value }))} />
+              </label>
+              <label>
+                Scope
+                <textarea rows={3} value={manualForm.scope} onChange={(e) => setManualForm((s) => ({ ...s, scope: e.target.value }))} />
+              </label>
+              <label>
+                Activities (one per line)
+                <textarea
+                  rows={4}
+                  value={manualForm.activities.join('\n')}
+                  onChange={(e) =>
+                    setManualForm((s) => ({
+                      ...s,
+                      activities: e.target.value
+                        .split('\n')
+                        .map((x) => x.trim())
+                        .filter(Boolean),
+                    }))
+                  }
+                />
+              </label>
+              <div className="split-2">
+                <label>
+                  Priority
+                  <select value={manualForm.priority} onChange={(e) => setManualForm((s) => ({ ...s, priority: e.target.value }))}>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+                <label>
+                  Project Context
+                  <select value={manualForm.project_context} onChange={(e) => setManualForm((s) => ({ ...s, project_context: e.target.value }))}>
+                    <option value="internal">Internal Product Development</option>
+                    <option value="client">Client Project</option>
+                  </select>
+                </label>
+              </div>
+              <label>
+                Hypothesis
+                <textarea rows={2} value={manualForm.rnd_hypothesis} onChange={(e) => setManualForm((s) => ({ ...s, rnd_hypothesis: e.target.value }))} />
+              </label>
+              <label>
+                Experiment Goal
+                <textarea rows={2} value={manualForm.rnd_experiment_goal} onChange={(e) => setManualForm((s) => ({ ...s, rnd_experiment_goal: e.target.value }))} />
+              </label>
+              <label>
+                Success Criteria
+                <textarea rows={2} value={manualForm.rnd_success_criteria} onChange={(e) => setManualForm((s) => ({ ...s, rnd_success_criteria: e.target.value }))} />
+              </label>
+              <div className="split-2">
+                <label>
+                  Timebox (weeks)
+                  <input
+                    type="number"
+                    min={1}
+                    value={manualForm.rnd_timebox_weeks ?? ''}
+                    onChange={(e) => setManualForm((s) => ({ ...s, rnd_timebox_weeks: e.target.value ? Number(e.target.value) : null }))}
+                  />
+                </label>
+                <label>
+                  Decision Date
+                  <input type="date" value={manualForm.rnd_decision_date} onChange={(e) => setManualForm((s) => ({ ...s, rnd_decision_date: e.target.value }))} />
+                </label>
+              </div>
+              <div className="split-2">
+                <label>
+                  Next Gate
+                  <select value={manualForm.rnd_next_gate} onChange={(e) => setManualForm((s) => ({ ...s, rnd_next_gate: e.target.value }))}>
+                    <option value="">Select</option>
+                    <option value="continue">Continue</option>
+                    <option value="pivot">Pivot</option>
+                    <option value="stop">Stop</option>
+                    <option value="productize">Productize</option>
+                  </select>
+                </label>
+                <label>
+                  Risk Level
+                  <select value={manualForm.rnd_risk_level} onChange={(e) => setManualForm((s) => ({ ...s, rnd_risk_level: e.target.value }))}>
+                    <option value="">Select</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div className="row-actions">
+              <button className="ghost-btn" type="button" onClick={() => setManualOpen(false)}>
+                Cancel
+              </button>
+              <button
+                className="primary-btn"
+                type="button"
+                disabled={busy || !isVP || !manualForm.title.trim()}
+                onClick={async () => {
+                  await createManualIntake({
+                    ...manualForm,
+                    delivery_mode: 'rnd',
+                  })
+                  setManualOpen(false)
+                  setManualForm({
+                    title: '',
+                    scope: '',
+                    activities: [],
+                    priority: 'medium',
+                    project_context: 'internal',
+                    initiative_type: 'new_feature',
+                    delivery_mode: 'rnd',
+                    rnd_hypothesis: '',
+                    rnd_experiment_goal: '',
+                    rnd_success_criteria: '',
+                    rnd_timebox_weeks: null,
+                    rnd_decision_date: '',
+                    rnd_next_gate: '',
+                    rnd_risk_level: '',
+                  })
+                }}
+              >
+                Create R&D Intake
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 type IntakeProps = {
+  canEnterRndFromIntake: boolean
   token: string | null
   documents: DocumentItem[]
   roadmapItems: RoadmapItem[]
@@ -3801,6 +4323,7 @@ function AuditCenterPage({ token, canView }: AuditCenterProps) {
 }
 
 function IntakePage({
+  canEnterRndFromIntake,
   token,
   documents,
   roadmapItems,
@@ -4641,9 +5164,14 @@ function IntakePage({
                   }
                 >
                   <option value="standard">Standard</option>
-                  <option value="rnd">R&D</option>
+                  <option value="rnd" disabled={!canEnterRndFromIntake}>
+                    R&D
+                  </option>
                 </select>
               </label>
+              {!canEnterRndFromIntake && (
+                <p className="muted">R&D intake entry is restricted to VP role.</p>
+              )}
               <label>
                 Project Context
                 <select
@@ -4862,9 +5390,14 @@ function IntakePage({
                   }
                 >
                   <option value="standard">Standard</option>
-                  <option value="rnd">R&D</option>
+                  <option value="rnd" disabled={!canEnterRndFromIntake}>
+                    R&D
+                  </option>
                 </select>
               </label>
+              {!canEnterRndFromIntake && (
+                <p className="muted">R&D intake entry is restricted to VP role.</p>
+              )}
               {manualForm.delivery_mode === 'rnd' && (
                 <>
                   <label>
@@ -4952,7 +5485,7 @@ function IntakePage({
               <button
                 className="primary-btn"
                 type="button"
-                disabled={busy || !manualForm.title.trim()}
+                disabled={busy || !manualForm.title.trim() || (manualForm.delivery_mode === 'rnd' && !canEnterRndFromIntake)}
                 onClick={async () => {
                   await createManualIntake(manualForm)
                   setManualModalOpen(false)

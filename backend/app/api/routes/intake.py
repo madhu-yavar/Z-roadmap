@@ -38,6 +38,20 @@ router = APIRouter(prefix="/intake", tags=["intake"])
 UNCLEAR_INTENT = "Document intent is unclear."
 
 
+def _is_rnd_mode(value: str | None) -> bool:
+    return (value or "").strip().lower() == "rnd"
+
+
+def _enforce_rnd_intake_entry(
+    current_user: User,
+    requested_mode: str | None = None,
+    existing_mode: str | None = None,
+) -> None:
+    if _is_rnd_mode(requested_mode) or _is_rnd_mode(existing_mode):
+        if current_user.role != UserRole.VP:
+            raise HTTPException(status_code=403, detail="Only VP can create or re-run R&D intake projects.")
+
+
 def _snapshot_intake(item: IntakeItem) -> dict:
     return {
         "document_class": item.document_class,
@@ -144,11 +158,18 @@ def analyze_document(
     payload: IntakeAnalyzeIn | None = None,
     force: bool = Query(False, description="Force reprocessing even if analysis exists"),
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
     document = db.get(Document, document_id)
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    existing_item = db.query(IntakeItem).filter(IntakeItem.document_id == document.id).first()
+    _enforce_rnd_intake_entry(
+        current_user=current_user,
+        requested_mode=payload.delivery_mode if payload else None,
+        existing_mode=existing_item.delivery_mode if existing_item else None,
+    )
 
     active_llm = db.query(LLMConfig).filter(LLMConfig.is_active.is_(True)).first()
     def _run(config: LLMConfig | None):
@@ -199,7 +220,7 @@ def analyze_document(
         "forced": bool(force),
     }
 
-    item = db.query(IntakeItem).filter(IntakeItem.document_id == document.id).first()
+    item = existing_item
     if not item:
         item = IntakeItem(document_id=document.id)
         before_data = {}
@@ -256,6 +277,8 @@ def manual_create_intake_item(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
+    _enforce_rnd_intake_entry(current_user=current_user, requested_mode=payload.delivery_mode)
+
     storage_dir = Path(settings.FILE_STORAGE_PATH)
     storage_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"manual-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}-{uuid4().hex[:6]}.txt"
