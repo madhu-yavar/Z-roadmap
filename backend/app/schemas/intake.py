@@ -32,6 +32,13 @@ class IntakeReviewIn(BaseModel):
     status: str = "approved"
 
 
+class UnderstandingApprovalIn(BaseModel):
+    primary_intent: str = ""
+    explicit_outcomes: list[str] = []
+    dominant_theme: str = ""
+    confidence: str = "medium"
+
+
 class IntakeOut(BaseModel):
     id: int
     document_id: int

@@ -329,6 +329,13 @@ type ManualIntakeIn = {
   rnd_risk_level: string
 }
 
+type UnderstandingApprovalInput = {
+  primary_intent: string
+  explicit_outcomes: string[]
+  dominant_theme: string
+  confidence: string
+}
+
 type RoadmapPlanItem = {
   id: number
   bucket_item_id: number
@@ -1365,12 +1372,19 @@ function App() {
     }
   }
 
-  async function approveUnderstanding(itemId: number) {
+  async function approveUnderstanding(itemId: number, payload?: UnderstandingApprovalInput) {
     if (!token) return
     setBusy(true)
     setError('')
     try {
-      const item = await api<IntakeItem>(`/intake/items/${itemId}/approve-understanding`, { method: 'POST' }, token)
+      const item = await api<IntakeItem>(
+        `/intake/items/${itemId}/approve-understanding`,
+        {
+          method: 'POST',
+          body: payload ? JSON.stringify(payload) : undefined,
+        },
+        token,
+      )
       setIntakeItems((items) => items.map((it) => (it.id === item.id ? item : it)))
       setSelectedIntakeId(item.id)
       setReviewTitle(item.title)
@@ -1426,7 +1440,7 @@ function App() {
     }
   }
 
-  async function submitReview(status: 'draft' | 'approved') {
+  async function submitReview(status: 'draft' | 'approved' | 'understanding_pending') {
     if (!token || !selectedIntakeId) return
     setBusy(true)
     setError('')
@@ -3071,11 +3085,11 @@ type IntakeProps = {
   toggleReviewActivityTag: (index: number, tag: ActivityTag) => void
   addReviewActivity: () => void
   removeReviewActivity: (index: number) => void
-  submitReview: (status: 'draft' | 'approved') => Promise<void>
+  submitReview: (status: 'draft' | 'approved' | 'understanding_pending') => Promise<void>
   intakeHistory: VersionItem[]
   selectedAnalysis: IntakeAnalysisPayload | null
   isCEO: boolean
-  approveUnderstanding: (itemId: number) => Promise<void>
+  approveUnderstanding: (itemId: number, payload?: UnderstandingApprovalInput) => Promise<void>
   createManualIntake: (payload: ManualIntakeIn) => Promise<void>
   selectedDocumentIds: number[]
   setSelectedDocumentIds: Dispatch<SetStateAction<number[]>>
@@ -3139,6 +3153,10 @@ function IntakePage({
   const [previewUnits, setPreviewUnits] = useState<Array<{ ref: string; text: string }>>([])
   const [previewError, setPreviewError] = useState('')
   const [previewLoading, setPreviewLoading] = useState(false)
+  const [understandingIntent, setUnderstandingIntent] = useState('')
+  const [understandingOutcomesText, setUnderstandingOutcomesText] = useState('')
+  const [understandingTheme, setUnderstandingTheme] = useState('')
+  const [understandingConfidence, setUnderstandingConfidence] = useState('medium')
   const supportTriggerRef = useRef('')
   const [intakeSeed, setIntakeSeed] = useState<IntakeSeedMeta>({
     priority: 'medium',
@@ -3194,7 +3212,13 @@ function IntakePage({
     | undefined
   const analysisRun = selectedAnalysisForItem?.output_json?.analysis_run as { run_id?: string } | undefined
   const isUnderstandingPending = selectedIntakeItem?.status === 'understanding_pending'
-  const isIntentUnclear = understandingCheck?.['Primary intent (1 sentence)'] === 'Document intent is unclear.'
+  const initialIntentUnclear = understandingCheck?.['Primary intent (1 sentence)'] === 'Document intent is unclear.'
+  const normalizedIntent = (understandingIntent || '').trim()
+  const isIntentUnclear = !normalizedIntent || normalizedIntent.toLowerCase() === 'document intent is unclear.'
+  const understandingOutcomes = understandingOutcomesText
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean)
   const docById = useMemo(() => new Map(documents.map((d) => [d.id, d])), [documents])
   const bucketDocIds = useMemo(
     () => new Set(roadmapItems.map((r) => r.source_document_id).filter((id): id is number => id !== null)),
@@ -3219,7 +3243,7 @@ function IntakePage({
   )
 
   useEffect(() => {
-    if (!selectedIntakeItem || !selectedAnalysisForItem || !isUnderstandingPending || !isIntentUnclear) {
+    if (!selectedIntakeItem || !selectedAnalysisForItem || !isUnderstandingPending || !initialIntentUnclear) {
       supportTriggerRef.current = ''
       return
     }
@@ -3227,7 +3251,25 @@ function IntakePage({
     if (supportTriggerRef.current === dedupeKey) return
     supportTriggerRef.current = dedupeKey
     requestIntakeSupport(selectedIntakeItem)
-  }, [selectedIntakeItem, selectedAnalysisForItem, isUnderstandingPending, isIntentUnclear, analysisRun?.run_id, requestIntakeSupport])
+  }, [selectedIntakeItem, selectedAnalysisForItem, isUnderstandingPending, initialIntentUnclear, analysisRun?.run_id, requestIntakeSupport])
+
+  useEffect(() => {
+    if (!selectedIntakeItem || !isUnderstandingPending) {
+      setUnderstandingIntent('')
+      setUnderstandingOutcomesText('')
+      setUnderstandingTheme('')
+      setUnderstandingConfidence('medium')
+      return
+    }
+    const intent = understandingCheck?.['Primary intent (1 sentence)'] || ''
+    const outcomes = understandingCheck?.['Explicit outcomes (bullet list)'] || []
+    const theme = understandingCheck?.['Dominant capability/theme (1 phrase)'] || ''
+    const confidence = (understandingCheck?.Confidence || 'medium').toString().trim() || 'medium'
+    setUnderstandingIntent(intent)
+    setUnderstandingOutcomesText(Array.isArray(outcomes) ? outcomes.join('\n') : '')
+    setUnderstandingTheme(theme)
+    setUnderstandingConfidence(confidence)
+  }, [selectedIntakeItem?.id, isUnderstandingPending, understandingCheck])
   const prettyStage = (value: string) => value.replaceAll('_', ' ')
   const formatBucketType = (projectContext: string, initiativeType: string) =>
     `${projectContext === 'internal' ? 'Internal' : 'Client'} / ${initiativeType === 'new_product' ? 'New Product' : 'New Feature'}`
@@ -3456,27 +3498,44 @@ function IntakePage({
         <h3>{isUnderstandingPending ? 'Understanding Review' : 'Candidate Review'}</h3>
         {selectedIntakeItem ? (
           <div className="stack">
-            {isUnderstandingPending && understandingCheck ? (
+            {isUnderstandingPending ? (
               <>
                 <div className="understanding-card">
                   <div className="understanding-row">
                     <span className="understanding-label">Primary intent</span>
-                    <span>{understandingCheck['Primary intent (1 sentence)'] || '-'}</span>
+                    <input
+                      value={understandingIntent}
+                      onChange={(e) => setUnderstandingIntent(e.target.value)}
+                      placeholder="Primary intent (1 sentence)"
+                    />
                   </div>
                   <div className="understanding-row">
                     <span className="understanding-label">Explicit outcomes</span>
-                    <ul className="understanding-list">
-                      {(understandingCheck['Explicit outcomes (bullet list)'] || []).map((outcome, i) => (
-                        <li key={`${outcome}-${i}`}>{outcome}</li>
-                      ))}
-                    </ul>
+                    <textarea
+                      rows={4}
+                      value={understandingOutcomesText}
+                      onChange={(e) => setUnderstandingOutcomesText(e.target.value)}
+                      placeholder="One outcome per line"
+                    />
                   </div>
                   <div className="understanding-row">
                     <span className="understanding-label">Dominant theme</span>
-                    <span>{understandingCheck['Dominant capability/theme (1 phrase)'] || '-'}</span>
+                    <input
+                      value={understandingTheme}
+                      onChange={(e) => setUnderstandingTheme(e.target.value)}
+                      placeholder="Dominant capability/theme"
+                    />
+                  </div>
+                  <div className="understanding-row">
+                    <span className="understanding-label">Confidence</span>
+                    <select value={understandingConfidence} onChange={(e) => setUnderstandingConfidence(e.target.value)}>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
                   </div>
                   <div className="understanding-meta">
-                    <span>Confidence: {understandingCheck.Confidence || '-'}</span>
+                    <span>Outcomes captured: {understandingOutcomes.length}</span>
                     {llmRuntime && (
                       <span>
                         Model: {llmRuntime.provider || '-'} / {llmRuntime.model || '-'} ({llmRuntime.success ? 'success' : 'fallback'})
@@ -3497,11 +3556,11 @@ function IntakePage({
                 </div>
                 {isIntentUnclear && (
                   <div className="error-text">
-                    <p>Approval is blocked because intent is unclear.</p>
+                    <p>Understanding intent is unclear. Edit the intent above or use intake support to regenerate.</p>
                     <ol>
-                      <li>Use the eye icon to inspect the uploaded document content quickly.</li>
-                      <li>Go to Settings, test provider/model, and switch if needed.</li>
-                      <li>Re-run understanding after fixing provider or uploading a clearer BRD/RFP.</li>
+                      <li>BA/PM can manually correct Primary intent, outcomes, and theme.</li>
+                      <li>Save draft to keep corrected fields in Understanding Review state.</li>
+                      <li>If needed, open support assistant to recreate understanding from document context.</li>
                     </ol>
                     <div className="row-actions">
                       <button
@@ -3549,19 +3608,98 @@ function IntakePage({
                     </div>
                   </div>
                 )}
+                <label>
+                  Title
+                  <input value={reviewTitle} onChange={(e) => setReviewTitle(e.target.value)} />
+                </label>
+                <label>
+                  Scope
+                  <textarea rows={3} value={reviewScope} onChange={(e) => setReviewScope(e.target.value)} />
+                </label>
+
+                <div className="activity-editor">
+                  <div className="line-item">
+                    <strong>Activities (inline edit)</strong>
+                    <button className="ghost-btn tiny" type="button" onClick={addReviewActivity}>
+                      + Add Activity
+                    </button>
+                  </div>
+                  <table className="activity-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Tags</th>
+                        <th>Activity</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reviewActivities.map((activity, idx) => {
+                        const parsed = parseActivityEntry(activity)
+                        return (
+                          <tr key={`${idx}-${activity}`}>
+                            <td>{idx + 1}</td>
+                            <td>
+                              <div className="activity-chip-row">
+                                {ACTIVITY_TAGS.map((tag) => {
+                                  const active = parsed.tags.includes(tag)
+                                  return (
+                                    <button
+                                      key={`${idx}-${tag}`}
+                                      className={`activity-tag-chip tag-${tag.toLowerCase()}${active ? ' active' : ' inactive'}`}
+                                      type="button"
+                                      onClick={() => toggleReviewActivityTag(idx, tag)}
+                                    >
+                                      {tag}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </td>
+                            <td>
+                              <input
+                                className="activity-input"
+                                value={parsed.text}
+                                onChange={(e) => updateReviewActivity(idx, e.target.value)}
+                                placeholder="Enter activity"
+                              />
+                            </td>
+                            <td>
+                              <button className="ghost-btn tiny" type="button" onClick={() => removeReviewActivity(idx)}>
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
                 {!isIntentUnclear && supportResolution?.applied && (
                   <p className="success-text">
                     Intake Support resolved understanding. Next step: approve understanding and generate candidate.
                   </p>
                 )}
-                <button
-                  className="primary-btn"
-                  type="button"
-                  disabled={busy || isIntentUnclear}
-                  onClick={() => approveUnderstanding(selectedIntakeItem.id)}
-                >
-                  Approve Understanding and Generate Candidate
-                </button>
+                <div className="split-2">
+                  <button className="ghost-btn" type="button" onClick={() => submitReview('understanding_pending')} disabled={busy}>
+                    Save Understanding Draft
+                  </button>
+                  <button
+                    className="primary-btn"
+                    type="button"
+                    disabled={busy || isIntentUnclear}
+                    onClick={() =>
+                      approveUnderstanding(selectedIntakeItem.id, {
+                        primary_intent: understandingIntent,
+                        explicit_outcomes: understandingOutcomes,
+                        dominant_theme: understandingTheme,
+                        confidence: understandingConfidence,
+                      })
+                    }
+                  >
+                    Accept Understanding and Generate Candidate
+                  </button>
+                </div>
               </>
             ) : (
               <>

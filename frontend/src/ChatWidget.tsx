@@ -48,6 +48,64 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
     canProceed: false,
   })
 
+  async function recreateUnderstandingReview() {
+    if (!supportContext || !onIntakeSupport || !token || isTyping) return
+    const resolutionPrompt =
+      'Go to Understanding Review and regenerate understanding with the available document evidence.'
+    setIsTyping(true)
+    setChatHistory((prev) => [
+      ...prev,
+      { role: 'user', content: resolutionPrompt },
+      { role: 'bot', content: '' },
+    ])
+    try {
+      const response = await onIntakeSupport(supportContext.intakeItemId, resolutionPrompt)
+      setChatHistory((prev) => {
+        const next = [...prev]
+        for (let i = next.length - 1; i >= 0; i -= 1) {
+          if (next[i].role === 'bot' && next[i].content === '') {
+            next[i] = {
+              role: 'bot',
+              content: response.answer,
+              evidence: response.evidence,
+              actions: response.actions || [],
+              supportState: response.support_state || 'general',
+              nextAction: response.next_action || 'none',
+              intakeItemId: response.intake_item_id ?? null,
+            }
+            return next
+          }
+        }
+        return next
+      })
+      const canProceed = Boolean(
+        response.intake_item_id &&
+        response.intent_clear &&
+        response.next_action === 'approve_understanding',
+      )
+      setSupportNavState({
+        intakeItemId: response.intake_item_id ?? supportContext.intakeItemId,
+        supportState: response.support_state || 'general',
+        nextAction: response.next_action || 'none',
+        canProceed,
+      })
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Unknown error'
+      setChatHistory((prev) => {
+        const next = [...prev]
+        for (let i = next.length - 1; i >= 0; i -= 1) {
+          if (next[i].role === 'bot' && next[i].content === '') {
+            next[i] = { role: 'bot', content: `Could not recreate understanding review: ${reason}` }
+            return next
+          }
+        }
+        return next
+      })
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
   // Add bot response to history when received
   useEffect(() => {
     if (isTyping && chatHistory.length > 0) {
@@ -304,6 +362,16 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
           <div className="chat-support-transition">
             <button
               type="button"
+              className="ghost-btn tiny"
+              disabled={busy || isTyping || !supportContext || supportNavState.canProceed}
+              onClick={() => {
+                void recreateUnderstandingReview()
+              }}
+            >
+              Recreate Understanding Review
+            </button>
+            <button
+              type="button"
               className="chat-support-transition-btn"
               disabled={
                 busy ||
@@ -330,7 +398,7 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
             <p className="chat-support-transition-hint">
               {supportNavState.canProceed
                 ? 'Intent is clear. You can now approve understanding.'
-                : 'Waiting for clear intent. Continue support conversation or re-run understanding.'}
+                : 'If intent is still unclear, click Recreate Understanding Review to run guided support resolution.'}
             </p>
           </div>
         )}

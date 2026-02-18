@@ -22,11 +22,19 @@ from app.models.user import User
 from app.schemas.common import BulkDeleteOut, BulkIdsIn
 from app.schemas.history import VersionOut
 from app.schemas.intake_analysis import IntakeAnalysisOut
-from app.schemas.intake import IntakeAnalyzeIn, IntakeAnalyzeOut, IntakeManualIn, IntakeOut, IntakeReviewIn
+from app.schemas.intake import (
+    IntakeAnalyzeIn,
+    IntakeAnalyzeOut,
+    IntakeManualIn,
+    IntakeOut,
+    IntakeReviewIn,
+    UnderstandingApprovalIn,
+)
 from app.services.intake_agent import generate_intake_analysis_v2, generate_roadmap_candidate_from_document
 from app.services.versioning import log_intake_version, log_roadmap_version
 
 router = APIRouter(prefix="/intake", tags=["intake"])
+UNCLEAR_INTENT = "Document intent is unclear."
 
 
 def _snapshot_intake(item: IntakeItem) -> dict:
@@ -312,6 +320,7 @@ def manual_create_intake_item(
 @router.post("/items/{item_id}/approve-understanding", response_model=IntakeAnalyzeOut)
 def approve_understanding_and_generate_candidate(
     item_id: int,
+    payload: UnderstandingApprovalIn | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM)),
 ):
@@ -327,9 +336,26 @@ def approve_understanding_and_generate_candidate(
     if not analysis:
         raise HTTPException(status_code=400, detail="Run document understanding first")
 
-    understanding = (analysis.output_json or {}).get("document_understanding_check") or {}
-    if understanding.get("Primary intent (1 sentence)") == "Document intent is unclear.":
-        raise HTTPException(status_code=400, detail="Document intent is unclear.")
+    existing_understanding = (analysis.output_json or {}).get("document_understanding_check") or {}
+    if payload:
+        manual_intent = (payload.primary_intent or "").strip()
+        manual_outcomes = [str(x).strip() for x in (payload.explicit_outcomes or []) if str(x).strip()]
+        manual_theme = (payload.dominant_theme or "").strip()
+        manual_confidence = (payload.confidence or "").strip() or "medium"
+        if not manual_intent:
+            raise HTTPException(status_code=400, detail="Primary intent is required to accept understanding.")
+        if manual_intent.lower() == UNCLEAR_INTENT.lower():
+            raise HTTPException(status_code=400, detail="Primary intent cannot be 'unclear' when accepting understanding.")
+        understanding = {
+            "Primary intent (1 sentence)": manual_intent,
+            "Explicit outcomes (bullet list)": manual_outcomes,
+            "Dominant capability/theme (1 phrase)": manual_theme,
+            "Confidence": manual_confidence,
+        }
+    else:
+        understanding = existing_understanding
+        if understanding.get("Primary intent (1 sentence)") == UNCLEAR_INTENT:
+            raise HTTPException(status_code=400, detail="Document intent is unclear.")
 
     active_llm = db.query(LLMConfig).filter(LLMConfig.is_active.is_(True)).first()
     def _run_candidate(config: LLMConfig | None):
@@ -357,6 +383,12 @@ def approve_understanding_and_generate_candidate(
     db.flush()
 
     merged = dict(analysis.output_json or {})
+    merged["document_understanding_check"] = understanding
+    merged["understanding_review"] = {
+        "accepted_by": current_user.id,
+        "accepted_at": datetime.utcnow().isoformat(),
+        "source": "manual_edit" if payload else "llm_generated",
+    }
     merged["roadmap_candidate"] = candidate_json["roadmap_candidate"]
     analysis.output_json = merged
     analysis.primary_type = result["primary_type"]
