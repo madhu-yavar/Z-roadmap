@@ -3249,6 +3249,46 @@ function DashboardPage({ dashboard, intakeItems, roadmapItems, roadmapPlanItems,
           </div>
         </article>
         <article className="panel-card">
+          <h3>Client vs Internal Portfolio Trend</h3>
+          <p className="muted">Roadmap throughput split for client and internal portfolios.</p>
+          <div className="chart-wrap chart-wrap-tall">
+            <ResponsiveContainer width="100%" height={260}>
+              <AreaChart data={trendSeries}>
+                <defs>
+                  <linearGradient id="clientArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColorPrimary} stopOpacity={0.35} />
+                    <stop offset="100%" stopColor={chartColorPrimary} stopOpacity={0.04} />
+                  </linearGradient>
+                  <linearGradient id="internalArea" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={chartColorSecondary} stopOpacity={0.3} />
+                    <stop offset="100%" stopColor={chartColorSecondary} stopOpacity={0.04} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                <XAxis dataKey="period" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="client" stroke={chartColorPrimary} fill="url(#clientArea)" strokeWidth={2.1} />
+                <Area type="monotone" dataKey="internal" stroke={chartColorSecondary} fill="url(#internalArea)" strokeWidth={2.1} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </article>
+      </section>
+
+      <section className="card-grid two">
+        <article className="panel-card">
+          <h3>Client Portfolio Weekly Capacity</h3>
+          <p className="muted">Active timeline utilization for the current date.</p>
+          {governanceConfig ? (
+            <CapacityMeters
+              title={`Client Utilization (${today.toLocaleDateString()})`}
+              utilization={capacitySnapshot.clientUtilization}
+            />
+          ) : (
+            <p className="muted">Governance configuration is missing. Set team sizes, efficiency, and quotas in Settings.</p>
+          )}
           <h3>Deterministic Capacity Alert</h3>
           {!capacityAlert ? (
             <p className="muted">Capacity alert data is not available.</p>
@@ -3290,44 +3330,6 @@ function DashboardPage({ dashboard, intakeItems, roadmapItems, roadmapPlanItems,
               </div>
             </div>
           )}
-        </article>
-      </section>
-
-      <section className="card-grid two">
-        <article className="panel-card">
-          <h3>Client Portfolio Weekly Capacity</h3>
-          <p className="muted">Active timeline utilization for the current date.</p>
-          {governanceConfig ? (
-            <CapacityMeters
-              title={`Client Utilization (${today.toLocaleDateString()})`}
-              utilization={capacitySnapshot.clientUtilization}
-            />
-          ) : (
-            <p className="muted">Governance configuration is missing. Set team sizes, efficiency, and quotas in Settings.</p>
-          )}
-          <div className="chart-wrap">
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={trendSeries}>
-                <defs>
-                  <linearGradient id="clientArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={chartColorPrimary} stopOpacity={0.35} />
-                    <stop offset="100%" stopColor={chartColorPrimary} stopOpacity={0.04} />
-                  </linearGradient>
-                  <linearGradient id="internalArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={chartColorSecondary} stopOpacity={0.3} />
-                    <stop offset="100%" stopColor={chartColorSecondary} stopOpacity={0.04} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
-                <XAxis dataKey="period" />
-                <YAxis allowDecimals={false} />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="client" stroke={chartColorPrimary} fill="url(#clientArea)" strokeWidth={2.1} />
-                <Area type="monotone" dataKey="internal" stroke={chartColorSecondary} fill="url(#internalArea)" strokeWidth={2.1} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
         </article>
         <article className="panel-card">
           <h3>Internal Portfolio Weekly Capacity</h3>
