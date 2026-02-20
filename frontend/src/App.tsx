@@ -1277,6 +1277,12 @@ function App() {
   const canManageCommitments = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
   const canViewRndLab = currentUser?.role === 'CEO' || currentUser?.role === 'VP'
   const canViewAuditCenter = currentUser?.role === 'ADMIN' || currentUser?.role === 'CEO' || currentUser?.role === 'VP'
+  const canDeleteDocuments =
+    currentUser?.role === 'CEO' ||
+    currentUser?.role === 'VP' ||
+    currentUser?.role === 'BA' ||
+    currentUser?.role === 'PM' ||
+    currentUser?.role === 'PO'
 
   async function loadData(activeToken: string) {
     const [meRes, dashboardRes, docsRes, intakeRes, roadmapRes, roadmapPlanRes, redundancyRes, cfgRes, governanceRes, usersRes, movementRes, customRolesRes, rolePoliciesRes] =
@@ -2748,6 +2754,7 @@ function App() {
               intakeHistory={intakeHistory}
               selectedAnalysis={selectedAnalysis}
               isCEO={isCEO}
+              canDeleteDocuments={Boolean(canDeleteDocuments)}
               approveUnderstanding={approveUnderstanding}
               saveUnderstandingDraft={saveUnderstandingDraft}
               createManualIntake={createManualIntake}
@@ -2912,6 +2919,7 @@ function App() {
           return data
         }}
         supportRequest={chatSupportRequest}
+        onSupportDismiss={() => setChatSupportRequest(null)}
         onIntakeSupport={async (intakeItemId, question) => {
           const data = await api<ChatResponse>(
             '/chat/intake-support',
@@ -3856,6 +3864,7 @@ type IntakeProps = {
   intakeHistory: VersionItem[]
   selectedAnalysis: IntakeAnalysisPayload | null
   isCEO: boolean
+  canDeleteDocuments: boolean
   approveUnderstanding: (itemId: number, payload?: UnderstandingApprovalInput) => Promise<void>
   saveUnderstandingDraft: (itemId: number, payload: UnderstandingApprovalInput) => Promise<void>
   createManualIntake: (payload: ManualIntakeIn) => Promise<void>
@@ -4469,6 +4478,7 @@ function IntakePage({
   intakeHistory,
   selectedAnalysis,
   isCEO,
+  canDeleteDocuments,
   approveUnderstanding,
   saveUnderstandingDraft,
   createManualIntake,
@@ -4499,7 +4509,6 @@ function IntakePage({
   const [understandingOutcomesText, setUnderstandingOutcomesText] = useState('')
   const [understandingTheme, setUnderstandingTheme] = useState('')
   const [understandingConfidence, setUnderstandingConfidence] = useState('medium')
-  const supportTriggerRef = useRef('')
   const [intakeSeed, setIntakeSeed] = useState<IntakeSeedMeta>({
     priority: 'medium',
     project_context: 'client',
@@ -4530,7 +4539,6 @@ function IntakePage({
     rnd_risk_level: '',
   })
 
-  const allDocumentsSelected = documents.length > 0 && documents.every((doc) => selectedDocumentIds.includes(doc.id))
   const selectedAnalysisForItem =
     selectedIntakeItem && selectedAnalysis && selectedAnalysis.intake_item_id === selectedIntakeItem.id
       ? selectedAnalysis
@@ -4552,9 +4560,7 @@ function IntakePage({
   const supportResolution = selectedAnalysisForItem?.output_json?.support_resolution as
     | { applied?: boolean; applied_at?: string; next_step?: string; intent_clear?: boolean }
     | undefined
-  const analysisRun = selectedAnalysisForItem?.output_json?.analysis_run as { run_id?: string } | undefined
   const isUnderstandingPending = selectedIntakeItem?.status === 'understanding_pending'
-  const initialIntentUnclear = understandingCheck?.['Primary intent (1 sentence)'] === 'Document intent is unclear.'
   const normalizedIntent = (understandingIntent || '').trim()
   const isIntentUnclear = !normalizedIntent || normalizedIntent.toLowerCase() === 'document intent is unclear.'
   const understandingOutcomes = understandingOutcomesText
@@ -4584,16 +4590,31 @@ function IntakePage({
     [documents, intakeByDocument, bucketDocIds],
   )
 
-  useEffect(() => {
-    if (!selectedIntakeItem || !selectedAnalysisForItem || !isUnderstandingPending || !initialIntentUnclear) {
-      supportTriggerRef.current = ''
-      return
+  const deletableDocIds = useMemo(() => {
+    if (!canDeleteDocuments) return new Set<number>()
+    const allowed = new Set<number>()
+    for (const row of queueRows) {
+      if (isCEO) {
+        allowed.add(row.doc.id)
+        continue
+      }
+      const status = (row.status || 'new').toLowerCase()
+      const linkedToRoadmap = Boolean(row.intake?.roadmap_item_id)
+      const isUnclearOrDraft = status === 'new' || status === 'draft' || status === 'understanding_pending'
+      if (!linkedToRoadmap && isUnclearOrDraft) {
+        allowed.add(row.doc.id)
+      }
     }
-    const dedupeKey = `${selectedIntakeItem.id}:${analysisRun?.run_id || 'no-run'}`
-    if (supportTriggerRef.current === dedupeKey) return
-    supportTriggerRef.current = dedupeKey
-    requestIntakeSupport(selectedIntakeItem)
-  }, [selectedIntakeItem, selectedAnalysisForItem, isUnderstandingPending, initialIntentUnclear, analysisRun?.run_id, requestIntakeSupport])
+    return allowed
+  }, [queueRows, canDeleteDocuments, isCEO])
+
+  const allDocumentsSelected =
+    deletableDocIds.size > 0 && Array.from(deletableDocIds).every((docId) => selectedDocumentIds.includes(docId))
+
+  useEffect(() => {
+    if (!selectedDocumentIds.length) return
+    setSelectedDocumentIds((ids) => ids.filter((id) => deletableDocIds.has(id)))
+  }, [deletableDocIds, selectedDocumentIds.length, setSelectedDocumentIds])
 
   useEffect(() => {
     if (!selectedIntakeItem || !isUnderstandingPending) {
@@ -4699,7 +4720,7 @@ function IntakePage({
               + Upload Files
             </button>
           </div>
-          {isCEO && (
+          {canDeleteDocuments && (
             <button
               className="ghost-btn tiny quiet-btn"
               type="button"
@@ -4714,13 +4735,13 @@ function IntakePage({
           <table className="docs-table">
             <thead>
               <tr>
-                {isCEO && (
+                {canDeleteDocuments && (
                   <th>
                     <input
                       type="checkbox"
                       checked={allDocumentsSelected}
                       onChange={(e) =>
-                        setSelectedDocumentIds(e.target.checked ? documents.map((doc) => doc.id) : [])
+                        setSelectedDocumentIds(e.target.checked ? Array.from(deletableDocIds) : [])
                       }
                     />
                   </th>
@@ -4739,17 +4760,25 @@ function IntakePage({
             <tbody>
               {queueRows.length === 0 && (
                 <tr>
-                    <td colSpan={isCEO ? 10 : 9} className="muted">
+                    <td colSpan={canDeleteDocuments ? 10 : 9} className="muted">
                       No documents uploaded yet.
                     </td>
                   </tr>
                 )}
-              {queueRows.map((row) => (
+              {queueRows.map((row) => {
+                const rowDeletable = deletableDocIds.has(row.doc.id)
+                return (
                 <tr key={row.doc.id}>
-                  {isCEO && (
+                  {canDeleteDocuments && (
                     <td>
                       <input
                         type="checkbox"
+                        disabled={!rowDeletable}
+                        title={
+                          rowDeletable
+                            ? 'Select document'
+                            : 'Only unclear/draft documents without roadmap linkage can be deleted for this role.'
+                        }
                         checked={selectedDocumentIds.includes(row.doc.id)}
                         onChange={(e) =>
                           setSelectedDocumentIds((ids) =>
@@ -4831,7 +4860,7 @@ function IntakePage({
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>

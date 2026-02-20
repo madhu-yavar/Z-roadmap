@@ -26,11 +26,12 @@ type ChatWidgetProps = {
   busy: boolean
   onChat: (question: string) => Promise<ChatResponse>
   supportRequest?: { key: string; intakeItemId: number; title: string } | null
+  onSupportDismiss?: () => void
   onIntakeSupport?: (intakeItemId: number, question?: string) => Promise<ChatResponse>
   onSupportApplied?: (intakeItemId: number) => Promise<void> | void
 }
 
-export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSupport, onSupportApplied }: ChatWidgetProps) {
+export function ChatWidget({ token, busy, onChat, supportRequest, onSupportDismiss, onIntakeSupport, onSupportApplied }: ChatWidgetProps) {
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [question, setQuestion] = useState('')
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([])
@@ -47,6 +48,18 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
     nextAction: 'none',
     canProceed: false,
   })
+
+  function closeSupportSession() {
+    setIsChatOpen(false)
+    setSupportContext(null)
+    setSupportNavState({
+      intakeItemId: null,
+      supportState: 'general',
+      nextAction: 'none',
+      canProceed: false,
+    })
+    onSupportDismiss?.()
+  }
 
   async function recreateUnderstandingReview() {
     if (!supportContext || !onIntakeSupport || !token || isTyping) return
@@ -294,10 +307,7 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
           </h3>
           <button
             className="chat-close-btn"
-            onClick={() => {
-              setIsChatOpen(false)
-              setSupportContext(null)
-            }}
+            onClick={closeSupportSession}
             aria-label="Close chat"
           >
             <svg viewBox="0 0 24 24" width="20" height="20">
@@ -425,7 +435,13 @@ export function ChatWidget({ token, busy, onChat, supportRequest, onIntakeSuppor
 
       <button
         className="chat-toggle-btn"
-        onClick={() => setIsChatOpen(!isChatOpen)}
+        onClick={() => {
+          if (isChatOpen) {
+            closeSupportSession()
+            return
+          }
+          setIsChatOpen(true)
+        }}
         aria-label={isChatOpen ? 'Close chat' : 'Open chat'}
       >
         {isChatOpen ? (

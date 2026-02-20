@@ -179,7 +179,7 @@ def get_document_preview(
 def bulk_delete_documents(
     payload: BulkIdsIn,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP, UserRole.BA, UserRole.PM, UserRole.PO)),
 ):
     ids = sorted(set(payload.ids))
     if not ids:
@@ -194,6 +194,18 @@ def bulk_delete_documents(
             for (rid,) in db.query(RoadmapItem.id).filter(RoadmapItem.source_document_id == doc.id).all()
         ]
         intake = db.query(IntakeItem).filter(IntakeItem.document_id == doc.id).first()
+        if current_user.role != UserRole.CEO:
+            intake_status = ((intake.status if intake else "new") or "new").strip().lower()
+            is_unclear_or_draft = intake_status in {"new", "draft", "understanding_pending"}
+            linked_to_roadmap = bool(direct_roadmap_ids or (intake and intake.roadmap_item_id))
+            if not is_unclear_or_draft or linked_to_roadmap:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "Only CEO can delete roadmap-linked or approved documents. "
+                        "For this role, delete is allowed only for new/draft/understanding_pending documents."
+                    ),
+                )
         if intake:
             roadmap_id = intake.roadmap_item_id
             db.query(IntakeAnalysis).filter(IntakeAnalysis.intake_item_id == intake.id).delete(synchronize_session=False)
