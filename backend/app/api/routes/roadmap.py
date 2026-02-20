@@ -1263,11 +1263,33 @@ def roadmap_history(
 def bulk_delete_roadmap_items(
     payload: BulkIdsIn,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
 ):
     ids = sorted(set(payload.ids))
     if not ids:
         return BulkDeleteOut(deleted=0)
+
+    if current_user.role == UserRole.VP:
+        committed_ids = {
+            bucket_id
+            for (bucket_id,) in db.query(RoadmapPlanItem.bucket_item_id)
+            .filter(RoadmapPlanItem.bucket_item_id.in_(ids))
+            .all()
+        }
+        if committed_ids:
+            blocked_titles = [
+                title
+                for (title,) in db.query(RoadmapItem.title)
+                .filter(RoadmapItem.id.in_(committed_ids))
+                .all()
+            ]
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "VP can delete only commitment-stage items (not yet committed to roadmap). "
+                    f"Blocked items: {', '.join(blocked_titles) if blocked_titles else sorted(committed_ids)}"
+                ),
+            )
 
     db.query(IntakeItem).filter(IntakeItem.roadmap_item_id.in_(ids)).update(
         {"roadmap_item_id": None, "status": "draft"},

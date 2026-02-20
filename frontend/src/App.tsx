@@ -2801,6 +2801,7 @@ function App() {
               setRoadmapAccountablePerson={setRoadmapAccountablePerson}
               setRoadmapPickedUp={setRoadmapPickedUp}
               isCEO={isCEO}
+              isVP={isVP}
               canManageCommitments={canManageCommitments}
               setSelectedRoadmapIds={setSelectedRoadmapIds}
               bulkDeleteRoadmap={bulkDeleteRoadmap}
@@ -5753,6 +5754,7 @@ type RoadmapProps = {
   setRoadmapAccountablePerson: Dispatch<SetStateAction<string>>
   setRoadmapPickedUp: Dispatch<SetStateAction<boolean>>
   isCEO: boolean
+  isVP: boolean
   canManageCommitments: boolean
   setSelectedRoadmapIds: Dispatch<SetStateAction<number[]>>
   bulkDeleteRoadmap: (idsOverride?: number[]) => Promise<void>
@@ -5823,6 +5825,7 @@ function RoadmapPage({
   setRoadmapAccountablePerson,
   setRoadmapPickedUp,
   isCEO,
+  isVP,
   canManageCommitments,
   setSelectedRoadmapIds,
   bulkDeleteRoadmap,
@@ -5965,6 +5968,13 @@ function RoadmapPage({
     return 'Unshaped'
   }
 
+  function canDeleteCandidate(item: RoadmapItem): boolean {
+    if (!canManageCommitments) return false
+    if (isCEO) return true
+    if (isVP) return !planByBucketItem.has(item.id)
+    return false
+  }
+
   function selectCandidate(item: RoadmapItem) {
     void startRoadmapEdit(item)
     const plan = planByBucketItem.get(item.id)
@@ -6039,7 +6049,7 @@ function RoadmapPage({
                   <strong>{item.title}</strong>
                   <div className="inbox-actions">
                     <span className="inbox-state">{status}</span>
-                    {isCEO && isActive && (
+                    {canDeleteCandidate(item) && isActive && (
                       <button
                         className="inbox-delete"
                         type="button"
