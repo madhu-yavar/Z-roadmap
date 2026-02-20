@@ -21,6 +21,7 @@ class IntakeAnalyzeOut(BaseModel):
     rnd_next_gate: str
     rnd_risk_level: str
     status: str
+    version_no: int
 
     model_config = {"from_attributes": True}
 
@@ -30,6 +31,7 @@ class IntakeReviewIn(BaseModel):
     scope: str
     activities: list[str]
     status: str = "approved"
+    expected_version_no: int
 
 
 class UnderstandingApprovalIn(BaseModel):
@@ -37,6 +39,7 @@ class UnderstandingApprovalIn(BaseModel):
     explicit_outcomes: list[str] = []
     dominant_theme: str = ""
     confidence: str = "medium"
+    expected_version_no: int
 
 
 class UnderstandingDraftIn(BaseModel):
@@ -44,6 +47,7 @@ class UnderstandingDraftIn(BaseModel):
     explicit_outcomes: list[str] = []
     dominant_theme: str = ""
     confidence: str = "medium"
+    expected_version_no: int
 
 
 class IntakeOut(BaseModel):
@@ -67,6 +71,7 @@ class IntakeOut(BaseModel):
     rnd_risk_level: str
     status: str
     roadmap_item_id: int | None
+    version_no: int
 
     model_config = {"from_attributes": True}
 

@@ -100,7 +100,19 @@ def _snapshot(item: RoadmapItem) -> dict:
         "pm_fte": item.pm_fte,
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
+        "version_no": item.version_no,
     }
+
+
+def _assert_expected_version(entity_label: str, current_version: int, expected_version: int) -> None:
+    if expected_version != current_version:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{entity_label} has been updated by another user. "
+                f"Expected version {expected_version}, current version {current_version}. Refresh and retry."
+            ),
+        )
 
 
 def _norm_portfolio(value: str) -> str:
@@ -889,6 +901,7 @@ def update_roadmap_plan_item(
     item = db.get(RoadmapPlanItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap plan item not found")
+    _assert_expected_version("Roadmap plan item", int(item.version_no or 1), int(payload.expected_version_no))
 
     start_date, end_date, duration_weeks = _parse_or_raise_plan_dates(
         payload.planned_start_date,
@@ -933,6 +946,7 @@ def update_roadmap_plan_item(
         confidence=payload.confidence,
         dependency_ids=payload.dependency_ids,
     )
+    item.version_no = int(item.version_no or 1) + 1
 
     db.add(item)
     db.commit()
@@ -1048,6 +1062,7 @@ def decide_roadmap_movement_request(
             confidence=item.confidence,
             dependency_ids=item.dependency_ids or [],
         )
+        item.version_no = int(item.version_no or 1) + 1
         request.executed_at = datetime.utcnow()
         db.add(item)
 
@@ -1107,6 +1122,7 @@ def ceo_move_roadmap_plan_item(
         confidence=item.confidence,
         dependency_ids=item.dependency_ids or [],
     )
+    item.version_no = int(item.version_no or 1) + 1
 
     now_utc = datetime.utcnow()
     movement = RoadmapMovementRequest(
@@ -1144,6 +1160,7 @@ def update_roadmap_item(
     item = db.get(RoadmapItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Roadmap item not found")
+    _assert_expected_version("Roadmap item", int(item.version_no or 1), int(payload.expected_version_no))
     locked_plan = db.query(RoadmapPlanItem).filter(RoadmapPlanItem.bucket_item_id == item.id).first()
     if locked_plan:
         raise HTTPException(
@@ -1172,6 +1189,7 @@ def update_roadmap_item(
     item.pm_fte = payload.pm_fte
     item.accountable_person = payload.accountable_person.strip()
     item.picked_up = payload.picked_up
+    item.version_no = int(item.version_no or 1) + 1
 
     db.add(item)
     db.flush()
@@ -1214,6 +1232,7 @@ def unlock_roadmap_item(
     before_data = _snapshot(item)
     db.delete(locked_plan)
     item.picked_up = False
+    item.version_no = int(item.version_no or 1) + 1
     db.add(item)
     db.flush()
 
@@ -1434,6 +1453,7 @@ def move_bucket_items_to_roadmap(
             existing.tentative_duration_weeks = payload.tentative_duration_weeks
             existing.pickup_period = payload.pickup_period.strip()
             existing.completion_period = payload.completion_period.strip()
+            existing.version_no = int(existing.version_no or 1) + 1
             db.add(existing)
             moved += 1
             continue

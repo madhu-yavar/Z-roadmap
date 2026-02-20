@@ -26,6 +26,7 @@ class RoadmapItemOut(BaseModel):
     accountable_person: str
     picked_up: bool
     source_document_id: int | None
+    version_no: int
     created_at: datetime | None = None
 
     model_config = {"from_attributes": True}
@@ -52,6 +53,7 @@ class RoadmapItemUpdateIn(BaseModel):
     pm_fte: float | None
     accountable_person: str
     picked_up: bool
+    expected_version_no: int
 
 
 class RoadmapMoveIn(BaseModel):
@@ -102,6 +104,7 @@ class RoadmapPlanOut(BaseModel):
     tentative_duration_weeks: int | None
     pickup_period: str
     completion_period: str
+    version_no: int
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -116,6 +119,7 @@ class RoadmapPlanUpdateIn(BaseModel):
     confidence: str = "medium"
     dependency_ids: list[int] = []
     change_reason: str = ""
+    expected_version_no: int
 
 
 class CapacityValidateIn(BaseModel):

@@ -6,5 +6,6 @@ class IntakeAnalysisOut(BaseModel):
     primary_type: str
     confidence: str
     output_json: dict
+    intake_item_version_no: int | None = None
 
     model_config = {"from_attributes": True}

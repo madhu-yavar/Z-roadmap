@@ -35,6 +35,7 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS rnd_decision_date VARCHAR(40) NOT NULL DEFAULT ''",
         "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS rnd_next_gate VARCHAR(30) NOT NULL DEFAULT ''",
         "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS rnd_risk_level VARCHAR(20) NOT NULL DEFAULT ''",
+        "ALTER TABLE intake_items ADD COLUMN IF NOT EXISTS version_no INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS priority VARCHAR(20) NOT NULL DEFAULT 'medium'",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS project_context VARCHAR(30) NOT NULL DEFAULT 'client'",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS initiative_type VARCHAR(30) NOT NULL DEFAULT 'new_feature'",
@@ -52,6 +53,7 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS pm_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS accountable_person VARCHAR(255) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS picked_up BOOLEAN NOT NULL DEFAULT FALSE",
+        "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS version_no INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS accountable_person VARCHAR(255) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(20) NOT NULL DEFAULT 'standard'",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS rnd_hypothesis VARCHAR(2000) NOT NULL DEFAULT ''",
@@ -72,6 +74,7 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS planning_status VARCHAR(20) NOT NULL DEFAULT 'not_started'",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS confidence VARCHAR(20) NOT NULL DEFAULT 'medium'",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS dependency_ids JSON NOT NULL DEFAULT '[]'",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS version_no INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64) NOT NULL DEFAULT ''",
         "CREATE INDEX IF NOT EXISTS ix_documents_file_hash ON documents (file_hash)",
         """

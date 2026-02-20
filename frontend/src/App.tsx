@@ -96,6 +96,7 @@ type IntakeItem = {
   rnd_risk_level: string
   status: string
   roadmap_item_id: number | null
+  version_no: number
   created_at?: string
 }
 
@@ -122,6 +123,7 @@ type RoadmapItem = {
   accountable_person: string
   picked_up: boolean
   source_document_id: number | null
+  version_no: number
   created_at: string
 }
 
@@ -296,6 +298,7 @@ type IntakeAnalysisPayload = {
   primary_type: string
   confidence: string
   output_json: Record<string, unknown>
+  intake_item_version_no?: number
 }
 
 type ChatResponse = {
@@ -432,6 +435,7 @@ type UnderstandingApprovalInput = {
   explicit_outcomes: string[]
   dominant_theme: string
   confidence: string
+  expected_version_no: number
 }
 
 type RoadmapPlanItem = {
@@ -467,6 +471,7 @@ type RoadmapPlanItem = {
   tentative_duration_weeks: number | null
   pickup_period: string
   completion_period: string
+  version_no: number
   created_at: string
 }
 
@@ -1492,7 +1497,7 @@ function App() {
     }
   }
 
-  async function approveUnderstanding(itemId: number, payload?: UnderstandingApprovalInput) {
+  async function approveUnderstanding(itemId: number, payload: UnderstandingApprovalInput) {
     if (!token) return
     setBusy(true)
     setError('')
@@ -1501,7 +1506,7 @@ function App() {
         `/intake/items/${itemId}/approve-understanding`,
         {
           method: 'POST',
-          body: payload ? JSON.stringify(payload) : undefined,
+          body: JSON.stringify(payload),
         },
         token,
       )
@@ -1520,12 +1525,12 @@ function App() {
     }
   }
 
-  async function saveUnderstandingDraft(itemId: number, payload: UnderstandingApprovalInput) {
-    if (!token) return
+  async function saveUnderstandingDraft(itemId: number, payload: UnderstandingApprovalInput): Promise<IntakeAnalysisPayload> {
+    if (!token) throw new Error('Session expired. Please sign in again.')
     setBusy(true)
     setError('')
     try {
-      await api<IntakeAnalysisPayload>(
+      const result = await api<IntakeAnalysisPayload>(
         `/intake/items/${itemId}/understanding-draft`,
         {
           method: 'PATCH',
@@ -1533,8 +1538,22 @@ function App() {
         },
         token,
       )
+      if (result.intake_item_version_no) {
+        setIntakeItems((items) =>
+          items.map((it) =>
+            it.id === itemId
+              ? {
+                  ...it,
+                  status: 'understanding_pending',
+                  version_no: result.intake_item_version_no || it.version_no,
+                }
+              : it,
+          ),
+        )
+      }
       await loadIntakeAnalysis(itemId)
       await loadIntakeHistory(itemId)
+      return result
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save understanding draft')
       throw err
@@ -1583,7 +1602,10 @@ function App() {
     }
   }
 
-  async function submitReview(status: 'draft' | 'approved' | 'understanding_pending') {
+  async function submitReview(
+    status: 'draft' | 'approved' | 'understanding_pending',
+    expectedVersionNo?: number,
+  ) {
     if (!token || !selectedIntakeId) return
     setBusy(true)
     setError('')
@@ -1598,6 +1620,7 @@ function App() {
             scope: reviewScope,
             activities: reviewActivities.map((x) => x.trim()).filter(Boolean),
             status,
+            expected_version_no: expectedVersionNo ?? selectedIntakeItem?.version_no ?? 0,
           }),
         },
         token,
@@ -1708,6 +1731,7 @@ function App() {
       pm_fte: Number.isFinite(parsedPm) && parsedPm >= 0 ? parsedPm : null,
       accountable_person: roadmapAccountablePerson,
       picked_up: roadmapPickedUp,
+      expected_version_no: selectedRoadmapItem?.version_no ?? 0,
     }
   }
 
@@ -1824,6 +1848,7 @@ function App() {
       confidence: string
       dependency_ids: number[]
       change_reason?: string
+      expected_version_no: number
     },
   ) {
     if (!token) return
@@ -3861,13 +3886,13 @@ type IntakeProps = {
   toggleReviewActivityTag: (index: number, tag: ActivityTag) => void
   addReviewActivity: () => void
   removeReviewActivity: (index: number) => void
-  submitReview: (status: 'draft' | 'approved' | 'understanding_pending') => Promise<void>
+  submitReview: (status: 'draft' | 'approved' | 'understanding_pending', expectedVersionNo?: number) => Promise<void>
   intakeHistory: VersionItem[]
   selectedAnalysis: IntakeAnalysisPayload | null
   isCEO: boolean
   canDeleteDocuments: boolean
-  approveUnderstanding: (itemId: number, payload?: UnderstandingApprovalInput) => Promise<void>
-  saveUnderstandingDraft: (itemId: number, payload: UnderstandingApprovalInput) => Promise<void>
+  approveUnderstanding: (itemId: number, payload: UnderstandingApprovalInput) => Promise<void>
+  saveUnderstandingDraft: (itemId: number, payload: UnderstandingApprovalInput) => Promise<IntakeAnalysisPayload>
   createManualIntake: (payload: ManualIntakeIn) => Promise<void>
   selectedDocumentIds: number[]
   setSelectedDocumentIds: Dispatch<SetStateAction<number[]>>
@@ -5060,13 +5085,17 @@ function IntakePage({
                     disabled={busy || !selectedIntakeItem}
                     onClick={async () => {
                       if (!selectedIntakeItem) return
-                      await saveUnderstandingDraft(selectedIntakeItem.id, {
+                      const draft = await saveUnderstandingDraft(selectedIntakeItem.id, {
                         primary_intent: understandingIntent,
                         explicit_outcomes: understandingOutcomes,
                         dominant_theme: understandingTheme,
                         confidence: understandingConfidence,
+                        expected_version_no: selectedIntakeItem.version_no,
                       })
-                      await submitReview('understanding_pending')
+                      await submitReview(
+                        'understanding_pending',
+                        draft.intake_item_version_no || selectedIntakeItem.version_no,
+                      )
                     }}
                   >
                     Save Understanding Draft
@@ -5081,6 +5110,7 @@ function IntakePage({
                         explicit_outcomes: understandingOutcomes,
                         dominant_theme: understandingTheme,
                         confidence: understandingConfidence,
+                        expected_version_no: selectedIntakeItem.version_no,
                       })
                     }
                   >
@@ -6544,6 +6574,7 @@ type RoadmapAgentProps = {
       confidence: string
       dependency_ids: number[]
       change_reason?: string
+      expected_version_no: number
     },
   ) => Promise<void>
   setRoadmapGovernanceLock: (payload: { roadmap_locked: boolean; note: string }) => Promise<void>
@@ -6852,6 +6883,7 @@ function RoadmapAgentPage({
       confidence: planConfidence,
       dependency_ids: Array.from(new Set(deps)),
       change_reason: movementReason.trim(),
+      expected_version_no: selectedPlan.version_no,
     })
   }
 

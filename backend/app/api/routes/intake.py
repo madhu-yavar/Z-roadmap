@@ -71,6 +71,7 @@ def _snapshot_intake(item: IntakeItem) -> dict:
         "rnd_risk_level": item.rnd_risk_level,
         "status": item.status,
         "roadmap_item_id": item.roadmap_item_id,
+        "version_no": item.version_no,
     }
 
 
@@ -96,6 +97,7 @@ def _snapshot_roadmap(item: RoadmapItem) -> dict:
         "pm_fte": item.pm_fte,
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
+        "version_no": item.version_no,
     }
 
 
@@ -106,6 +108,17 @@ def _normalize_understanding_confidence(value: str) -> str:
     if raw == "low":
         return "Low"
     return "Medium"
+
+
+def _assert_expected_version(entity_label: str, current_version: int, expected_version: int) -> None:
+    if expected_version != current_version:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{entity_label} has been updated by another user. "
+                f"Expected version {expected_version}, current version {current_version}. Refresh and retry."
+            ),
+        )
 
 
 def _with_vertex_fallback(
@@ -226,6 +239,7 @@ def analyze_document(
         before_data = {}
     else:
         before_data = _snapshot_intake(item)
+        item.version_no = int(item.version_no or 1) + 1
 
     item.document_class = result["document_class"]
     item.title = result["title"]
@@ -360,6 +374,9 @@ def approve_understanding_and_generate_candidate(
     item = db.get(IntakeItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Intake item not found")
+    if not payload:
+        raise HTTPException(status_code=400, detail="Expected version is required.")
+    _assert_expected_version("Intake item", int(item.version_no or 1), int(payload.expected_version_no))
 
     document = db.get(Document, item.document_id)
     if not document:
@@ -412,6 +429,7 @@ def approve_understanding_and_generate_candidate(
     item.activities = result["activities"]
     item.source_quotes = result["source_quotes"]
     item.status = "draft"
+    item.version_no = int(item.version_no or 1) + 1
     db.add(item)
     db.flush()
 
@@ -452,6 +470,7 @@ def save_understanding_draft(
     item = db.get(IntakeItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Intake item not found")
+    _assert_expected_version("Intake item", int(item.version_no or 1), int(payload.expected_version_no))
 
     analysis = db.query(IntakeAnalysis).filter(IntakeAnalysis.intake_item_id == item.id).first()
     if not analysis:
@@ -486,6 +505,7 @@ def save_understanding_draft(
 
     before_data = _snapshot_intake(item)
     item.status = "understanding_pending"
+    item.version_no = int(item.version_no or 1) + 1
     db.add(item)
     db.flush()
 
@@ -500,7 +520,14 @@ def save_understanding_draft(
 
     db.commit()
     db.refresh(analysis)
-    return analysis
+    db.refresh(item)
+    return IntakeAnalysisOut(
+        intake_item_id=analysis.intake_item_id,
+        primary_type=analysis.primary_type,
+        confidence=analysis.confidence,
+        output_json=analysis.output_json,
+        intake_item_version_no=item.version_no,
+    )
 
 
 @router.get("/items/{item_id}/analysis", response_model=IntakeAnalysisOut)
@@ -567,6 +594,7 @@ def review_intake_item(
     item = db.get(IntakeItem, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Intake item not found")
+    _assert_expected_version("Intake item", int(item.version_no or 1), int(payload.expected_version_no))
 
     before_data = _snapshot_intake(item)
 
@@ -575,6 +603,7 @@ def review_intake_item(
     item.activities = [x.strip() for x in payload.activities if x.strip()]
     item.status = payload.status
     item.reviewed_by = current_user.id
+    item.version_no = int(item.version_no or 1) + 1
 
     roadmap_action: str | None = None
     roadmap_before: dict = {}
@@ -623,6 +652,7 @@ def review_intake_item(
                 roadmap_item.rnd_decision_date = item.rnd_decision_date
                 roadmap_item.rnd_next_gate = item.rnd_next_gate
                 roadmap_item.rnd_risk_level = item.rnd_risk_level
+                roadmap_item.version_no = int(roadmap_item.version_no or 1) + 1
                 roadmap_action = "updated_from_intake"
                 roadmap_after = _snapshot_roadmap(roadmap_item)
                 db.add(roadmap_item)
