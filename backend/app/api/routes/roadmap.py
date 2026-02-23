@@ -1208,6 +1208,76 @@ def update_roadmap_item(
     return item
 
 
+@router.post("/items/{item_id}/move-to-rnd", response_model=RoadmapItemOut)
+def move_commitment_to_rnd_lab(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
+):
+    item = db.get(RoadmapItem, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Roadmap item not found")
+
+    locked_plan = db.query(RoadmapPlanItem).filter(RoadmapPlanItem.bucket_item_id == item.id).first()
+    if locked_plan:
+        raise HTTPException(
+            status_code=409,
+            detail="This item is already committed to roadmap. Unlock it before moving to R&D lab.",
+        )
+
+    sibling = None
+    if item.created_from_intake_id:
+        sibling = (
+            db.query(RoadmapItem)
+            .filter(
+                RoadmapItem.id != item.id,
+                RoadmapItem.created_from_intake_id == item.created_from_intake_id,
+            )
+            .order_by(RoadmapItem.id.desc())
+            .first()
+        )
+    elif item.source_document_id:
+        sibling = (
+            db.query(RoadmapItem)
+            .filter(
+                RoadmapItem.id != item.id,
+                RoadmapItem.source_document_id == item.source_document_id,
+            )
+            .order_by(RoadmapItem.id.desc())
+            .first()
+        )
+    if sibling:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "State conflict detected: another commitment already exists for the same intake/document "
+                f"(item #{sibling.id}: {sibling.title}). Resolve redundancy before moving to R&D lab."
+            ),
+        )
+
+    before_data = _snapshot(item)
+    item.delivery_mode = "rnd"
+    item.project_context = "internal"
+    if item.initiative_type not in {"new_feature", "new_product"}:
+        item.initiative_type = "new_feature"
+    item.version_no = int(item.version_no or 1) + 1
+    db.add(item)
+    db.flush()
+
+    log_roadmap_version(
+        db=db,
+        roadmap_item_id=item.id,
+        action="move_to_rnd_lab",
+        changed_by=current_user.id,
+        before_data=before_data,
+        after_data=_snapshot(item),
+    )
+
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.post("/items/{item_id}/unlock", response_model=RoadmapUnlockOut)
 def unlock_roadmap_item(
     item_id: int,

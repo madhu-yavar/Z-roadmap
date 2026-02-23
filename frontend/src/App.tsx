@@ -1813,6 +1813,20 @@ function App() {
     }
   }
 
+  async function moveRoadmapCandidateToRnd(itemId: number) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      await api<RoadmapItem>(`/roadmap/items/${itemId}/move-to-rnd`, { method: 'POST' }, token)
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Move to R&D Lab failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function applyRedundancyDecision(
     itemId: number,
     action: 'merge' | 'keep_both' | 'intentional_overlap',
@@ -2847,6 +2861,7 @@ function App() {
               saveRoadmapCandidate={saveRoadmapCandidate}
               commitSelectedToRoadmap={commitSelectedToRoadmap}
               unlockRoadmapCommitment={unlockRoadmapCommitment}
+              moveRoadmapCandidateToRnd={moveRoadmapCandidateToRnd}
               applyRedundancyDecision={applyRedundancyDecision}
               busy={busy}
             />
@@ -6038,6 +6053,7 @@ type RoadmapProps = {
   saveRoadmapCandidate: (itemId: number) => Promise<void>
   commitSelectedToRoadmap: (itemId: number) => Promise<void>
   unlockRoadmapCommitment: (itemId: number) => Promise<void>
+  moveRoadmapCandidateToRnd: (itemId: number) => Promise<void>
   applyRedundancyDecision: (
     itemId: number,
     action: 'merge' | 'keep_both' | 'intentional_overlap',
@@ -6095,6 +6111,7 @@ function RoadmapPage({
   saveRoadmapCandidate,
   commitSelectedToRoadmap,
   unlockRoadmapCommitment,
+  moveRoadmapCandidateToRnd,
   applyRedundancyDecision,
   busy,
 }: RoadmapProps) {
@@ -6438,6 +6455,7 @@ function RoadmapPage({
               <span className="activity-tag-chip tag-ai active">{roadmapDeliveryMode === 'rnd' ? 'R&D' : 'Standard Delivery'}</span>
               <span className="activity-tag-chip tag-fe active">{formatInitiative(roadmapInitiativeType)}</span>
             </div>
+            <p className="muted">Classification is single-state. Each commitment can exist in only one mode/context at a time.</p>
             {roadmapDeliveryMode === 'rnd' && (
               <details className="flat-detail">
                 <summary>View R&D framing</summary>
@@ -6481,16 +6499,34 @@ function RoadmapPage({
               <div className="activity-editor">
                 <div className="line-item">
                   <strong>Update details before commitment</strong>
-                  {!isLocked && (
-                    <button
-                      className="ghost-btn tiny"
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void saveRoadmapCandidate(selectedRoadmapItem.id)}
-                    >
-                      Save Candidate Updates
-                    </button>
-                  )}
+                  <div className="activity-chip-row">
+                    {!isLocked && (
+                      <button
+                        className="ghost-btn tiny"
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void saveRoadmapCandidate(selectedRoadmapItem.id)}
+                      >
+                        Save Candidate Updates
+                      </button>
+                    )}
+                    {!isLocked && canManageCommitments && (
+                      <button
+                        className="ghost-btn tiny"
+                        type="button"
+                        disabled={busy || roadmapDeliveryMode === 'rnd'}
+                        onClick={async () => {
+                          const ok = window.confirm(
+                            'Move this commitment to R&D Lab?\n\nThis will set Project Type to Internal and Delivery Mode to R&D.',
+                          )
+                          if (!ok) return
+                          await moveRoadmapCandidateToRnd(selectedRoadmapItem.id)
+                        }}
+                      >
+                        {roadmapDeliveryMode === 'rnd' ? 'Already in R&D Lab' : 'Move to R&D Lab'}
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <label>
                   Title
