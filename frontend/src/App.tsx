@@ -5708,7 +5708,7 @@ function IntakePage({
         </div>
         <div className="upload-sidebar-content">
           <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0 }}>
-            Upload BRD/PPT/Excel/RFP to classify and extract activities for project bucket placement.
+            Upload BRD/PPT/Excel/CSV/RFP to classify and extract activities for project bucket placement.
           </p>
 
           <form className="upload-inline" onSubmit={handleUpload}>
@@ -5717,6 +5717,7 @@ function IntakePage({
               ref={uploadInputRef}
               type="file"
               multiple
+              accept=".pdf,.doc,.docx,.ppt,.pptx,.xlsx,.xls,.csv,.txt,.md,.json,.xml,.html"
               className="upload-file-hidden"
               onChange={(e) => setUploadFiles(Array.from(e.target.files || []))}
             />

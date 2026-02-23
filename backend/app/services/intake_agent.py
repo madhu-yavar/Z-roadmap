@@ -1,6 +1,8 @@
 from pathlib import Path
 import re
+from typing import Any, TypedDict
 
+from langgraph.graph import END, StateGraph
 from app.services.document_parser import extract_document_units
 from app.services.llm_client import LLMClientError, call_llm_json
 
@@ -180,6 +182,98 @@ TAG_ALIASES = {
     "MODEL": "AI",
 }
 
+ACTION_LINE_VERBS = {
+    "build",
+    "implement",
+    "validate",
+    "normalize",
+    "classify",
+    "parse",
+    "extract",
+    "generate",
+    "render",
+    "enforce",
+    "import",
+    "export",
+    "map",
+    "bind",
+    "route",
+    "store",
+    "upload",
+    "compute",
+    "log",
+    "track",
+    "detect",
+    "fix",
+}
+
+TECHNICAL_HEADING_HINTS = {
+    "schema",
+    "contract",
+    "parser",
+    "normalizer",
+    "workflow",
+    "state",
+    "validation",
+    "enforcement",
+    "audit",
+    "logging",
+    "agent",
+    "risk",
+    "architecture",
+    "pipeline",
+    "classification",
+    "import",
+    "export",
+    "persistence",
+    "layout",
+}
+
+HIGH_VALUE_ACTION_HINTS = TECHNICAL_HEADING_HINTS | {
+    "workflow",
+    "json",
+    "node",
+    "edge",
+    "approval",
+    "connectivity",
+    "branch",
+    "state machine",
+    "traceability",
+}
+
+METADATA_LINE_HINTS = {
+    "generated:",
+    "prepared for:",
+    "status:",
+    "end of phase",
+}
+
+TABULAR_ACTIVITY_FIELD_HINTS = (
+    "activity",
+    "task",
+    "work item",
+    "workstream",
+    "description",
+    "feature",
+    "deliverable",
+    "story",
+    "action",
+)
+
+TABULAR_TAG_FIELD_HINTS = (
+    "owner",
+    "role",
+    "lane",
+    "stream",
+    "team",
+    "function",
+    "squad",
+    "discipline",
+)
+
+ACTIVITY_TAG_RE = re.compile(r"^\[(FE|BE|AI)(?:/(FE|BE|AI))*\]\s*", flags=re.IGNORECASE)
+ACTION_LINE_RE = re.compile(r"\b(" + "|".join(ACTION_LINE_VERBS) + r")\w*\b", flags=re.IGNORECASE)
+
 
 def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-zA-Z0-9]+", text.lower()) if len(t) > 2 and t not in STOPWORDS}
@@ -262,6 +356,416 @@ def _fallback_doc_type(file_type: str, file_name: str) -> str:
     if ext in {"doc", "docx", "pdf"}:
         return "BRD"
     return "Mixed / Composite Document"
+
+
+def _parse_page_no(ref: str) -> int:
+    m = re.search(r"page:(\d+)", ref or "")
+    if not m:
+        return 0
+    return int(m.group(1))
+
+
+def _extract_numbered_heading_text(line: str) -> str:
+    text = re.sub(r"^\d+(?:\.\d+)+\s+", "", (line or "").strip())
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _is_numbered_heading(line: str) -> bool:
+    return bool(re.match(r"^\d+(?:\.\d+)+\s+", (line or "").strip()))
+
+
+def _has_activity_signal(line: str) -> bool:
+    low = (line or "").lower()
+    if low.startswith("yavar.ai phase"):
+        return False
+    if any(h in low for h in METADATA_LINE_HINTS):
+        return False
+    if line.startswith(("-", "*", "•")) or re.match(r"^\d+[\.\)]\s+", line):
+        return True
+    return bool(ACTION_LINE_RE.search(low))
+
+
+def _is_high_value_action_line(line: str) -> bool:
+    low = (line or "").lower()
+    if any(x in low for x in ("does not", "not do", "cannot", "can't", "prepared for")):
+        return False
+    if not _has_activity_signal(line):
+        return False
+    return any(k in low for k in HIGH_VALUE_ACTION_HINTS)
+
+
+def _activity_tags(activity: str) -> list[str]:
+    m = ACTIVITY_TAG_RE.match(activity or "")
+    if not m:
+        return _infer_activity_tags(activity)
+    text = m.group(0).strip()[1:-1]
+    tags = []
+    for raw in text.split("/"):
+        norm = _normalize_activity_tag(raw)
+        if norm and norm not in tags:
+            tags.append(norm)
+    return tags or _infer_activity_tags(activity)
+
+
+def _lane_counts(activities: list[str]) -> dict[str, int]:
+    counts = {"FE": 0, "BE": 0, "AI": 0}
+    for act in activities:
+        for tag in _activity_tags(act):
+            counts[tag] += 1
+    return counts
+
+
+def _doc_complexity_profile(units: list[dict], file_name: str, file_type: str) -> dict[str, Any]:
+    pages = sorted({_parse_page_no(u.get("ref", "")) for u in units if _parse_page_no(u.get("ref", "")) > 0})
+    page_count = len(pages)
+    heading_count = sum(1 for u in units if _is_numbered_heading(str(u.get("text") or "").strip()))
+    activity_signal_count = sum(1 for u in units[:1200] if _has_activity_signal(str(u.get("text") or "").strip()))
+    ai_signal_count = sum(
+        1 for u in units[:1200] if any(k in str(u.get("text") or "").lower() for k in (" ai ", "llm", "model", "nlp", "agent"))
+    )
+    fe_signal_count = sum(
+        1
+        for u in units[:1200]
+        if any(k in str(u.get("text") or "").lower() for k in ("ui", "ux", "canvas", "render", "react", "frontend"))
+    )
+    doc_type = _fallback_doc_type(file_type=file_type, file_name=file_name)
+
+    score = 0
+    if page_count >= 12:
+        score += 2
+    elif page_count >= 6:
+        score += 1
+    if heading_count >= 25:
+        score += 2
+    elif heading_count >= 10:
+        score += 1
+    if activity_signal_count >= 40:
+        score += 2
+    elif activity_signal_count >= 20:
+        score += 1
+
+    if score >= 4:
+        level = "high"
+        commitment_target = 16
+        commitment_min = 10
+        commitment_max = 20
+        implementation_target = 32
+        implementation_max = 40
+        understanding_outcomes_max = 12
+        prompt_units_understanding = 420
+        prompt_units_candidate = 420
+    elif score >= 2:
+        level = "medium"
+        commitment_target = 12
+        commitment_min = 8
+        commitment_max = 16
+        implementation_target = 24
+        implementation_max = 30
+        understanding_outcomes_max = 10
+        prompt_units_understanding = 340
+        prompt_units_candidate = 340
+    else:
+        level = "low"
+        commitment_target = 8
+        commitment_min = 5
+        commitment_max = 12
+        implementation_target = 16
+        implementation_max = 20
+        understanding_outcomes_max = 8
+        prompt_units_understanding = 260
+        prompt_units_candidate = 260
+
+    lane_minimums = {
+        "FE": 4 if fe_signal_count >= 8 and level == "high" else 2,
+        "BE": 6 if level == "high" else 4,
+        "AI": 3 if ai_signal_count >= 6 and level == "high" else (2 if ai_signal_count >= 3 else 1),
+    }
+
+    return {
+        "doc_type": doc_type,
+        "level": level,
+        "score": score,
+        "page_count": page_count,
+        "heading_count": heading_count,
+        "activity_signal_count": activity_signal_count,
+        "ai_signal_count": ai_signal_count,
+        "fe_signal_count": fe_signal_count,
+        "commitment_target": commitment_target,
+        "commitment_min": commitment_min,
+        "commitment_max": commitment_max,
+        "implementation_target": implementation_target,
+        "implementation_max": implementation_max,
+        "understanding_outcomes_max": understanding_outcomes_max,
+        "prompt_units_understanding": prompt_units_understanding,
+        "prompt_units_candidate": prompt_units_candidate,
+        "lane_minimums": lane_minimums,
+    }
+
+
+def _select_units_for_prompt(units: list[dict], mode: str, max_units: int) -> list[dict]:
+    if len(units) <= max_units:
+        return units
+
+    term_map = {
+        "understanding": (
+            "objective",
+            "scope",
+            "requirements",
+            "purpose",
+            "problem statement",
+            "business",
+            "outcomes",
+            "phase",
+        ),
+        "candidate": (
+            "schema",
+            "workflow",
+            "parser",
+            "normalizer",
+            "state",
+            "validation",
+            "audit",
+            "log",
+            "agent",
+            "build",
+            "implement",
+            "activity",
+            "task",
+            "workstream",
+            "owner",
+            "role",
+            "lane",
+            "effort",
+            "dependency",
+        ),
+    }
+    terms = term_map.get(mode, term_map["candidate"])
+    picks: list[int] = []
+    seen = set()
+
+    def _add(idx: int) -> None:
+        if idx < 0 or idx >= len(units) or idx in seen:
+            return
+        picks.append(idx)
+        seen.add(idx)
+
+    # Keep early context and final summary pages.
+    for idx in range(min(40, len(units))):
+        _add(idx)
+    for idx in range(max(0, len(units) - 20), len(units)):
+        _add(idx)
+
+    # Prefer numbered sections and activity lines.
+    for idx, unit in enumerate(units):
+        text = str(unit.get("text") or "").strip()
+        low = text.lower()
+        if _is_numbered_heading(text):
+            _add(idx)
+            _add(idx + 1)
+            continue
+        if any(t in low for t in terms) and (_has_activity_signal(text) or len(text) >= 28):
+            _add(idx)
+
+    # Uniform coverage across entire document.
+    if len(picks) < max_units:
+        step = max(1, len(units) // max_units)
+        for idx in range(0, len(units), step):
+            _add(idx)
+            if len(picks) >= max_units:
+                break
+
+    ordered = [units[idx] for idx in sorted(picks)]
+    return ordered[:max_units]
+
+
+def _deterministic_activity_candidates(units: list[dict], max_items: int = 80) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def _add(raw_text: str, force_verb: str = "") -> None:
+        text = re.sub(r"\s+", " ", (raw_text or "").strip()).strip(" .")
+        text = re.split(r"[.;]", text)[0].strip()
+        low = text.lower()
+        if not text or len(text) < 16:
+            return
+        if low.startswith("yavar.ai phase") or any(h in low for h in METADATA_LINE_HINTS):
+            return
+        if any(x in low for x in ("does not", "not do", "cannot", "can't")):
+            return
+        if text.count(",") >= 3:
+            return
+        if _is_forbidden_text(text):
+            return
+        candidate = text
+        if force_verb:
+            candidate = f"{force_verb} {candidate}"
+        candidate = _sanitize_activity(candidate)
+        if not candidate:
+            return
+        if _word_count(candidate) < 3:
+            return
+        tagged = _format_activity_with_tags(candidate)
+        key = tagged.lower()
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(tagged)
+
+    for unit in units:
+        line = str(unit.get("text") or "").strip()
+        if not line:
+            continue
+        if _is_numbered_heading(line):
+            heading = _extract_numbered_heading_text(line)
+            hlow = heading.lower()
+            if any(k in hlow for k in TECHNICAL_HEADING_HINTS):
+                if any(k in hlow for k in ("schema", "contract")):
+                    _add(heading, "Define")
+                elif any(k in hlow for k in ("validation", "normalizer", "parser", "enforcement")):
+                    _add(heading, "Implement")
+                elif any(k in hlow for k in ("audit", "logging", "trace")):
+                    _add(heading, "Establish")
+                else:
+                    _add(heading, "Implement")
+        elif _is_high_value_action_line(line):
+            cleaned = re.sub(r"^[-*•\d\.\)\s]+", "", line).strip()
+            _add(cleaned)
+        if len(out) >= max_items:
+            break
+
+    return out
+
+
+def _extract_structured_activity_candidates(units: list[dict], max_items: int = 100) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    for unit in units:
+        ref = str(unit.get("ref") or "").lower()
+        if not (ref.startswith("sheet:") or ref.startswith("csv:")):
+            continue
+        text = str(unit.get("text") or "").strip()
+        if not text:
+            continue
+        low = text.lower()
+        if "header" in ref and any(h in low for h in TABULAR_ACTIVITY_FIELD_HINTS):
+            continue
+
+        # Parse "key: value | key: value" rows from spreadsheet/csv parser.
+        field_pairs: list[tuple[str, str]] = []
+        for part in [p.strip() for p in text.split("|") if p.strip()]:
+            if ":" not in part:
+                continue
+            key, val = part.split(":", 1)
+            k = key.strip().lower()
+            v = val.strip()
+            if k and v:
+                field_pairs.append((k, v))
+        fields = {k: v for k, v in field_pairs}
+
+        raw_activity = ""
+        for hint in TABULAR_ACTIVITY_FIELD_HINTS:
+            for key, value in field_pairs:
+                if hint in key and value:
+                    raw_activity = value
+                    break
+            if raw_activity:
+                break
+        if not raw_activity and len(fields) == 1:
+            raw_activity = next(iter(fields.values()))
+        if not raw_activity:
+            # Fallback for plain table lines.
+            first_segment = text.split("|", 1)[0].strip()
+            if _has_activity_signal(first_segment) or any(h in first_segment.lower() for h in ACTIVITY_TERMS):
+                raw_activity = first_segment
+        if not raw_activity:
+            continue
+
+        inferred_tags: list[str] = []
+        for hint in TABULAR_TAG_FIELD_HINTS:
+            for key, value in field_pairs:
+                if hint in key:
+                    for token in re.split(r"[,/|;+ ]", value):
+                        norm = _normalize_activity_tag(token)
+                        if norm and norm not in inferred_tags:
+                            inferred_tags.append(norm)
+        if not inferred_tags:
+            inferred_tags = _infer_activity_tags(raw_activity)
+
+        sanitized = _sanitize_activity(raw_activity)
+        if not sanitized or _word_count(sanitized) < 3:
+            continue
+        tagged = _format_activity_with_tags(sanitized, inferred_tags)
+        key = tagged.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(tagged)
+        if len(out) >= max_items:
+            break
+
+    return out
+
+
+def _ensure_lane_coverage(activities: list[str], candidate_pool: list[str], lane_minimums: dict[str, int], hard_max: int) -> list[str]:
+    out = list(activities)
+    counts = _lane_counts(out)
+    for lane in ("FE", "BE", "AI"):
+        needed = max(0, int(lane_minimums.get(lane, 0)) - counts.get(lane, 0))
+        if needed <= 0:
+            continue
+        for cand in candidate_pool:
+            if len(out) >= hard_max or needed <= 0:
+                break
+            tags = _activity_tags(cand)
+            if lane not in tags:
+                continue
+            if cand in out:
+                continue
+            out.append(cand)
+            needed -= 1
+    return out
+
+
+def _merge_activity_sets(
+    llm_activities: list[str],
+    deterministic_activities: list[str],
+    profile: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    merged: list[str] = []
+    seen: set[str] = set()
+    for item in llm_activities + deterministic_activities:
+        tagged = _format_activity_with_tags(_strip_activity_tags(item))
+        if not tagged:
+            continue
+        key = tagged.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(tagged)
+
+    merged = _ensure_lane_coverage(
+        activities=merged,
+        candidate_pool=deterministic_activities,
+        lane_minimums=profile.get("lane_minimums", {}),
+        hard_max=int(profile.get("implementation_max", 30)),
+    )
+
+    commitment_target = int(profile.get("commitment_target", 12))
+    commitment_min = int(profile.get("commitment_min", 6))
+    commitment_max = int(profile.get("commitment_max", 16))
+    implementation_target = int(profile.get("implementation_target", 24))
+    implementation_max = int(profile.get("implementation_max", 30))
+
+    commitment_count = min(commitment_max, max(commitment_min, commitment_target))
+    commitment = merged[:commitment_count]
+    if len(commitment) < commitment_min:
+        commitment = merged[:max(commitment_min, len(commitment))]
+
+    implementation_count = min(implementation_max, max(len(commitment), implementation_target))
+    implementation = merged[:implementation_count]
+    return commitment, implementation
 
 
 def _extract_scope(units: list[dict]) -> tuple[str, list[str]]:
@@ -567,7 +1071,7 @@ def _fallback_understanding(units: list[dict], file_name: str, file_type: str) -
     }
 
 
-def _normalize_understanding(data: dict, fallback: dict, units: list[dict]) -> dict:
+def _normalize_understanding(data: dict, fallback: dict, units: list[dict], max_outcomes: int = 8) -> dict:
     if not isinstance(data, dict):
         raise LLMClientError("Model returned non-object JSON. Expected a JSON object.")
     intent = str(
@@ -605,10 +1109,10 @@ def _normalize_understanding(data: dict, fallback: dict, units: list[dict]) -> d
             continue
         seen.add(k)
         outcomes.append(cleaned)
-        if len(outcomes) >= 8:
+        if len(outcomes) >= max_outcomes:
             break
     if len(outcomes) < 2:
-        outcomes = fallback["explicit_outcomes"][:8]
+        outcomes = fallback["explicit_outcomes"][:max_outcomes]
 
     dominant_theme = str(
         data.get("Dominant capability/theme (1 phrase)")
@@ -749,6 +1253,209 @@ def _normalize_candidate(
         candidate["evidence"] = candidate["evidence"] or fallback["evidence"]
 
     return candidate
+
+
+class CandidateGraphState(TypedDict, total=False):
+    units: list[dict]
+    file_name: str
+    file_type: str
+    understanding_check: dict
+    provider: str
+    model: str
+    api_key: str
+    base_url: str
+    guidance: str
+    profile: dict[str, Any]
+    sampled_units: list[dict]
+    fallback_candidate: dict
+    llm_attempted: bool
+    llm_success: bool
+    llm_error: str
+    llm_raw_candidate: dict
+    candidate: dict
+    commitment_activities: list[str]
+    implementation_activities: list[str]
+    deterministic_activities: list[str]
+    structured_activities: list[str]
+
+
+def _candidate_graph_prepare_node(state: CandidateGraphState) -> CandidateGraphState:
+    units = state.get("units") or []
+    file_name = state.get("file_name") or "document"
+    file_type = state.get("file_type") or ""
+    profile = _doc_complexity_profile(units=units, file_name=file_name, file_type=file_type)
+    sampled_units = _select_units_for_prompt(
+        units=units,
+        mode="candidate",
+        max_units=int(profile.get("prompt_units_candidate", 320)),
+    )
+    fallback_candidate = _fallback_candidate(units=units, file_name=file_name, file_type=file_type)
+    return {
+        "profile": profile,
+        "sampled_units": sampled_units,
+        "fallback_candidate": fallback_candidate,
+        "llm_attempted": bool(state.get("provider") and state.get("model")),
+        "llm_success": False,
+        "llm_error": "",
+        "llm_raw_candidate": {},
+        "candidate": fallback_candidate,
+    }
+
+
+def _candidate_graph_llm_node(state: CandidateGraphState) -> CandidateGraphState:
+    if not state.get("llm_attempted"):
+        return {}
+    sampled_units = state.get("sampled_units") or []
+    units_for_prompt = "\n".join([f"[{u['ref']}] {u['text']}" for u in sampled_units])
+    guidance = (state.get("guidance") or "").strip()
+    guidance_block = (
+        f"\nOperator guidance:\n{guidance}\nUse this to prioritize relevant document sections.\n"
+        if guidance
+        else ""
+    )
+    profile = state.get("profile") or {}
+    min_acts = max(5, int(profile.get("commitment_min", 8)))
+    max_acts = min(24, int(profile.get("commitment_max", 16)))
+
+    prompt = f"""
+SYSTEM / GOVERNANCE INSTRUCTION
+You are a Roadmap Intake Agent.
+
+Your job is NOT to summarize documents.
+Your job is to propose business commitments that can be approved by executives.
+
+Documents are evidence.
+Roadmaps are decisions.
+
+You must NEVER copy document text into roadmap fields.
+If a roadmap field sounds like marketing or prose, it is wrong.
+
+You must convert:
+- Document descriptions -> business intent
+- Features -> capabilities
+- Sections -> activity clusters
+
+You may ONLY output a ROADMAP CANDIDATE object.
+No UI fields. No prose. No summaries.
+
+ROADMAP CANDIDATE - STRICT FORMAT (JSON object keys exactly):
+Title
+Intent
+Scope
+Activities
+Evidence
+Confidence
+
+Field rules:
+- Title: 3-6 words, noun phrase
+- Intent: one sentence, business reason
+- Scope: one sentence (24-55 words), must include what is in-scope and what is excluded.
+- Activities: choose count based on document complexity (minimum {min_acts}, maximum {max_acts}), verb-led items, each <12 words
+- Activities format: list of objects with keys "activity" and "tags"
+- Tags must be one or more from: FE, BE, AI
+- Evidence: document references only (no quotes)
+- Confidence: High / Medium / Low
+
+Scope quality gates (mandatory):
+- Must include the word "includes".
+- Must contain one boundary phrase: "excluding" or "limited to" or "does not include".
+- Must trace to approved outcomes and intent, not generic platform claims.
+- Must avoid marketing language and vague terms (smart, seamless, innovative, future-ready).
+
+Activity quality gates (mandatory):
+- Every activity must map to at least one approved explicit outcome.
+- Activities must be implementation-ready and non-duplicative.
+- If a role tag cannot be inferred from evidence, default tag is BE.
+{guidance_block}
+
+Approved understanding context:
+{state.get("understanding_check") or {}}
+
+Document name: {state.get("file_name") or "document"}
+Document units with references:
+{units_for_prompt}
+""".strip()
+    try:
+        raw = call_llm_json(
+            provider=state.get("provider") or "",
+            model=state.get("model") or "",
+            api_key=state.get("api_key") or "",
+            base_url=state.get("base_url") or "",
+            prompt=prompt,
+        )
+        return {"llm_success": True, "llm_error": "", "llm_raw_candidate": raw}
+    except LLMClientError as exc:
+        return {"llm_success": False, "llm_error": str(exc), "llm_raw_candidate": {}}
+    except Exception as exc:
+        return {"llm_success": False, "llm_error": str(exc), "llm_raw_candidate": {}}
+
+
+def _candidate_graph_refine_node(state: CandidateGraphState) -> CandidateGraphState:
+    units = state.get("units") or []
+    file_name = state.get("file_name") or "document"
+    fallback_candidate = state.get("fallback_candidate") or _fallback_candidate(units, file_name, state.get("file_type") or "")
+    profile = state.get("profile") or {}
+
+    if state.get("llm_success") and state.get("llm_raw_candidate"):
+        candidate = _normalize_candidate(
+            data=state.get("llm_raw_candidate") or {},
+            fallback=fallback_candidate,
+            units=units,
+            file_name=file_name,
+            understanding_check=state.get("understanding_check") or {},
+        )
+    else:
+        candidate = fallback_candidate
+
+    structured_activities = _extract_structured_activity_candidates(
+        units=units,
+        max_items=max(40, int(profile.get("implementation_max", 30))),
+    )
+    deterministic_activities = _deterministic_activity_candidates(
+        units=units,
+        max_items=max(40, int(profile.get("implementation_max", 30))),
+    )
+    merged_deterministic = structured_activities + [a for a in deterministic_activities if a not in structured_activities]
+    seed_activities = candidate.get("activities") or []
+    if not state.get("llm_success"):
+        # For non-LLM path, prioritize structured table activities first.
+        seed_activities = structured_activities
+    commitment_activities, implementation_activities = _merge_activity_sets(
+        llm_activities=seed_activities,
+        deterministic_activities=merged_deterministic,
+        profile=profile,
+    )
+    candidate["activities"] = commitment_activities
+    candidate["commitment_activities"] = commitment_activities
+    candidate["implementation_activities"] = implementation_activities
+    if not candidate.get("evidence"):
+        candidate["evidence"] = fallback_candidate.get("evidence") or []
+    return {
+        "candidate": candidate,
+        "commitment_activities": commitment_activities,
+        "implementation_activities": implementation_activities,
+        "deterministic_activities": merged_deterministic,
+        "structured_activities": structured_activities,
+    }
+
+
+_CANDIDATE_GRAPH = None
+
+
+def _candidate_graph():
+    global _CANDIDATE_GRAPH
+    if _CANDIDATE_GRAPH is not None:
+        return _CANDIDATE_GRAPH
+    graph = StateGraph(CandidateGraphState)
+    graph.add_node("prepare", _candidate_graph_prepare_node)
+    graph.add_node("llm_candidate", _candidate_graph_llm_node)
+    graph.add_node("deterministic_refine", _candidate_graph_refine_node)
+    graph.set_entry_point("prepare")
+    graph.add_edge("prepare", "llm_candidate")
+    graph.add_edge("llm_candidate", "deterministic_refine")
+    graph.add_edge("deterministic_refine", END)
+    _CANDIDATE_GRAPH = graph.compile()
+    return _CANDIDATE_GRAPH
 
 
 def _map_to_phase(activity: str) -> str:
@@ -965,15 +1672,22 @@ def generate_intake_analysis_v2(
     guidance: str = "",
 ) -> tuple[dict, dict]:
     units = extract_document_units(file_path=file_path, file_type=file_type)
+    profile = _doc_complexity_profile(units=units, file_name=file_name, file_type=file_type)
     fallback = _fallback_understanding(units=units, file_name=file_name, file_type=file_type)
     llm_attempted = bool(provider and model)
     llm_success = False
     llm_error = ""
+    outcomes_max = int(profile.get("understanding_outcomes_max", 8))
 
     if not llm_attempted:
         understanding = fallback
     else:
-        units_for_prompt = "\n".join([f"[{u['ref']}] {u['text']}" for u in units[:260]])
+        sampled_units = _select_units_for_prompt(
+            units=units,
+            mode="understanding",
+            max_units=int(profile.get("prompt_units_understanding", 260)),
+        )
+        units_for_prompt = "\n".join([f"[{u['ref']}] {u['text']}" for u in sampled_units])
         guidance_block = f"\nOperator guidance:\n{guidance}\nUse this to focus extraction while staying evidence-grounded.\n" if guidance else ""
         prompt = f"""
 You are a Roadmap Intake Agent.
@@ -998,7 +1712,7 @@ Required output (JSON keys exactly):
 
 Rules:
 - Primary intent must be one sentence.
-- Explicit outcomes must be 2-8 bullets, concrete and explicit.
+- Explicit outcomes must be 2-{outcomes_max} bullets, concrete and explicit.
 - Dominant capability/theme must be one short phrase.
 - Evidence must be document references only (no copied paragraphs).
 - Confidence must be High / Medium / Low.
@@ -1018,7 +1732,7 @@ Document units with references:
                 base_url=base_url,
                 prompt=prompt,
             )
-            understanding = _normalize_understanding(raw, fallback, units)
+            understanding = _normalize_understanding(raw, fallback, units, max_outcomes=outcomes_max)
             llm_success = True
         except LLMClientError as exc:
             understanding = fallback
@@ -1064,6 +1778,14 @@ Document units with references:
             "error": llm_error,
         },
         "parser_coverage": _coverage_metadata(units),
+        "complexity_profile": {
+            "level": profile.get("level"),
+            "score": profile.get("score"),
+            "page_count": profile.get("page_count"),
+            "heading_count": profile.get("heading_count"),
+            "activity_signal_count": profile.get("activity_signal_count"),
+            "understanding_outcomes_max": outcomes_max,
+        },
     }
 
     return analysis_output, flat
@@ -1081,106 +1803,38 @@ def generate_roadmap_candidate_from_document(
     guidance: str = "",
 ) -> tuple[dict, dict]:
     units = extract_document_units(file_path=file_path, file_type=file_type)
-    fallback = _fallback_candidate(units=units, file_name=file_name, file_type=file_type)
-    llm_attempted = bool(provider and model)
-    llm_success = False
-    llm_error = ""
 
     primary_intent = str(understanding_check.get("Primary intent (1 sentence)") or "").strip()
     if primary_intent == "Document intent is unclear.":
         raise ValueError("Document intent is unclear.")
 
-    if not llm_attempted:
-        candidate = fallback
-    else:
-        units_for_prompt = "\n".join([f"[{u['ref']}] {u['text']}" for u in units[:260]])
-        guidance_block = f"\nOperator guidance:\n{guidance}\nUse this to prioritize relevant document sections.\n" if guidance else ""
-        prompt = f"""
-SYSTEM / GOVERNANCE INSTRUCTION
-You are a Roadmap Intake Agent.
-
-Your job is NOT to summarize documents.
-Your job is to propose business commitments that can be approved by executives.
-
-Documents are evidence.
-Roadmaps are decisions.
-
-You must NEVER copy document text into roadmap fields.
-If a roadmap field sounds like marketing or prose, it is wrong.
-
-You must convert:
-- Document descriptions -> business intent
-- Features -> capabilities
-- Sections -> activity clusters
-
-You may ONLY output a ROADMAP CANDIDATE object.
-No UI fields. No prose. No summaries.
-
-ROADMAP CANDIDATE - STRICT FORMAT (JSON object keys exactly):
-Title
-Intent
-Scope
-Activities
-Evidence
-Confidence
-
-Field rules:
-- Title: 3-6 words, noun phrase
-- Intent: one sentence, business reason
-- Scope: one sentence (24-45 words), must include what is in-scope and what is excluded.
-- Activities: choose count based on document complexity (minimum 3, maximum 12), verb-led items, each <12 words
-- Activities format: list of objects with keys "activity" and "tags"
-- Tags must be one or more from: FE, BE, AI
-- Evidence: document references only (no quotes)
-- Confidence: High / Medium / Low
-
-Scope quality gates (mandatory):
-- Must include the word "includes".
-- Must contain one boundary phrase: "excluding" or "limited to" or "does not include".
-- Must trace to approved outcomes and intent, not generic platform claims.
-- Must avoid marketing language and vague terms (smart, seamless, innovative, future-ready).
-
-Activity quality gates (mandatory):
-- Every activity must map to at least one approved explicit outcome.
-- Activities must be implementation-ready and non-duplicative.
-- If a role tag cannot be inferred from evidence, default tag is BE.
-{guidance_block}
-
-Approved understanding context:
-{understanding_check}
-
-Document name: {file_name}
-Document units with references:
-{units_for_prompt}
-""".strip()
-        try:
-            raw = call_llm_json(
-                provider=provider,
-                model=model,
-                api_key=api_key,
-                base_url=base_url,
-                prompt=prompt,
-            )
-            candidate = _normalize_candidate(
-                raw,
-                fallback,
-                units,
-                file_name=file_name,
-                understanding_check=understanding_check,
-            )
-            llm_success = True
-        except LLMClientError as exc:
-            candidate = fallback
-            llm_error = str(exc)
-        except Exception as exc:
-            candidate = fallback
-            llm_error = str(exc)
+    initial_state: CandidateGraphState = {
+        "units": units,
+        "file_name": file_name,
+        "file_type": file_type,
+        "understanding_check": understanding_check,
+        "provider": provider,
+        "model": model,
+        "api_key": api_key,
+        "base_url": base_url,
+        "guidance": guidance,
+    }
+    state = _candidate_graph().invoke(initial_state)
+    fallback = state.get("fallback_candidate") or _fallback_candidate(units=units, file_name=file_name, file_type=file_type)
+    candidate = state.get("candidate") or fallback
+    commitment_activities = state.get("commitment_activities") or candidate.get("activities") or []
+    implementation_activities = state.get("implementation_activities") or commitment_activities
+    candidate["activities"] = commitment_activities
+    llm_attempted = bool(state.get("llm_attempted"))
+    llm_success = bool(state.get("llm_success"))
+    llm_error = str(state.get("llm_error") or "")
+    profile = state.get("profile") or _doc_complexity_profile(units=units, file_name=file_name, file_type=file_type)
 
     if _is_low_quality_sentence(candidate.get("scope", ""), strict=False) or not _scope_has_boundaries(candidate.get("scope", "")):
         candidate["scope"] = _compose_scope_from_understanding(
             understanding_check=understanding_check,
-            activities=candidate.get("activities") or fallback["activities"],
-            fallback_scope=candidate.get("scope") or fallback["scope"],
+            activities=commitment_activities,
+            fallback_scope=candidate.get("scope") or fallback.get("scope") or "",
         )
 
     analysis_output = {
@@ -1188,7 +1842,9 @@ Document units with references:
             "Title": candidate["title"],
             "Intent": candidate["intent"],
             "Scope": candidate["scope"],
-            "Activities": candidate["activities"],
+            "Activities": commitment_activities,
+            "CommitmentActivities": commitment_activities,
+            "ImplementationActivities": implementation_activities,
             "Evidence": candidate["evidence"],
             "Confidence": candidate["confidence"],
         },
@@ -1200,6 +1856,15 @@ Document units with references:
             "error": llm_error,
         },
         "parser_coverage": _coverage_metadata(units),
+        "complexity_profile": {
+            "level": profile.get("level"),
+            "score": profile.get("score"),
+            "page_count": profile.get("page_count"),
+            "heading_count": profile.get("heading_count"),
+            "activity_signal_count": profile.get("activity_signal_count"),
+            "commitment_target": profile.get("commitment_target"),
+            "implementation_target": profile.get("implementation_target"),
+        },
     }
     flat = {
         "document_class": {
@@ -1212,7 +1877,8 @@ Document units with references:
         }.get(candidate["_doc_type"], "other"),
         "title": candidate["title"][:255],
         "scope": candidate["scope"][:2000],
-        "activities": candidate["activities"][:20],
+        "activities": commitment_activities[:20],
+        "implementation_activities": implementation_activities[:40],
         "source_quotes": candidate["evidence"][:8],
         "primary_type": candidate["_doc_type"],
         "confidence": candidate["confidence"],
