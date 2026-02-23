@@ -407,6 +407,10 @@ def approve_understanding_and_generate_candidate(
         if understanding.get("Primary intent (1 sentence)") == UNCLEAR_INTENT:
             raise HTTPException(status_code=400, detail="Document intent is unclear.")
 
+    activity_mode = (payload.activity_mode or "commitment").strip().lower() if payload else "commitment"
+    if activity_mode not in {"commitment", "implementation"}:
+        raise HTTPException(status_code=400, detail="activity_mode must be 'commitment' or 'implementation'.")
+
     active_llm = db.query(LLMConfig).filter(LLMConfig.is_active.is_(True)).first()
     def _run_candidate(config: LLMConfig | None):
         return generate_roadmap_candidate_from_document(
@@ -421,12 +425,16 @@ def approve_understanding_and_generate_candidate(
         )
 
     candidate_json, result = _with_vertex_fallback(db=db, active_llm=active_llm, runner=_run_candidate)
+    roadmap_candidate = (candidate_json or {}).get("roadmap_candidate") or {}
+    commitment_activities = roadmap_candidate.get("CommitmentActivities") or roadmap_candidate.get("Activities") or result.get("activities") or []
+    implementation_activities = roadmap_candidate.get("ImplementationActivities") or commitment_activities
+    selected_activities = implementation_activities if activity_mode == "implementation" else commitment_activities
 
     before_data = _snapshot_intake(item)
     item.document_class = result["document_class"]
     item.title = result["title"]
     item.scope = result["scope"]
-    item.activities = result["activities"]
+    item.activities = selected_activities
     item.source_quotes = result["source_quotes"]
     item.status = "draft"
     item.version_no = int(item.version_no or 1) + 1
@@ -441,6 +449,7 @@ def approve_understanding_and_generate_candidate(
         "source": "manual_edit" if payload else "llm_generated",
     }
     merged["roadmap_candidate"] = candidate_json["roadmap_candidate"]
+    merged["activity_mode_selected"] = activity_mode
     analysis.output_json = merged
     analysis.primary_type = result["primary_type"]
     analysis.confidence = result["confidence"]

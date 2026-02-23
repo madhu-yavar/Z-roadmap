@@ -110,6 +110,16 @@ ACTION_VERBS = {
 
 ALLOWED_ACTIVITY_TAGS = ("FE", "BE", "AI")
 
+BASE_ACTIVITY_VERBS = ACTION_VERBS | {
+    "build",
+    "create",
+    "configure",
+    "develop",
+    "refine",
+    "optimize",
+    "enforce",
+}
+
 ACTIVITY_TAG_HINTS = {
     "FE": {
         "ui",
@@ -248,6 +258,57 @@ METADATA_LINE_HINTS = {
     "end of phase",
 }
 
+CONCRETE_ACTIVITY_HINTS = {
+    "api",
+    "endpoint",
+    "schema",
+    "validator",
+    "capacity",
+    "quota",
+    "audit",
+    "dashboard",
+    "workflow",
+    "roadmap",
+    "commitment",
+    "intake",
+    "notification",
+    "policy",
+    "approval",
+    "timeline",
+    "resource",
+    "service",
+    "parser",
+    "normalizer",
+    "state",
+    "history",
+    "rbac",
+    "jwt",
+}
+
+GENERIC_ACTIVITY_WORDS = {
+    "core",
+    "node",
+    "module",
+    "system",
+    "platform",
+    "process",
+    "workflow",
+    "support",
+    "enablement",
+    "improvement",
+    "optimization",
+    "framework",
+    "structure",
+    "model",
+    "schema",
+    "capability",
+    "solution",
+}
+
+ACTIVITY_ACRONYMS = {"API", "UI", "UX", "JSON", "RBAC", "JWT", "FTE", "LLM", "AI", "ML", "NLP", "OCR"}
+NOISY_ACTIVITY_WORDS = {"requires", "require", "should", "must", "would", "could", "may"}
+ACTIVITY_REWRITE_THRESHOLD = 70
+
 TABULAR_ACTIVITY_FIELD_HINTS = (
     "activity",
     "task",
@@ -330,6 +391,110 @@ def _format_activity_with_tags(activity: str, tags: list[str] | None = None) -> 
         return ""
     lane_tags = _coerce_activity_tags(tags or [], clean_activity)
     return f"[{'/'.join(lane_tags)}] {clean_activity}"
+
+
+def _activity_verb(activity: str) -> str:
+    plain = _strip_activity_tags(activity).strip()
+    if not plain:
+        return ""
+    first = plain.split()[0].lower()
+    return re.sub(r"[^a-z]", "", first)
+
+
+def _activity_quality_score(activity: str) -> int:
+    plain = _strip_activity_tags(activity).strip()
+    if not plain:
+        return 0
+    words = re.findall(r"[A-Za-z0-9\-]+", plain)
+    if not words:
+        return 0
+    low_words = [w.lower() for w in words]
+    score = 0
+
+    if _activity_verb(plain) in BASE_ACTIVITY_VERBS or _activity_verb(plain) in ACTION_LINE_VERBS:
+        score += 25
+
+    wc = len(words)
+    if 4 <= wc <= 12:
+        score += 20
+    elif 3 <= wc <= 14:
+        score += 10
+
+    tags = _activity_tags(activity)
+    if tags:
+        score += 10
+
+    if any(h in " ".join(low_words) for h in CONCRETE_ACTIVITY_HINTS):
+        score += 25
+
+    if any(tok in low_words for tok in ("for", "with", "to")):
+        score += 5
+
+    if _is_forbidden_text(plain):
+        score -= 20
+
+    if plain.count(",") >= 2 or " is " in f" {plain.lower()} ":
+        score -= 15
+
+    if any(x in plain.lower() for x in ("pre-existing", "conforming to", "etc", "and/or")):
+        score -= 10
+    if any(w in plain.lower().split() for w in NOISY_ACTIVITY_WORDS):
+        score -= 10
+
+    non_stop = [w for w in low_words if len(w) > 2 and w not in STOPWORDS]
+    if non_stop:
+        generic_hits = sum(1 for w in non_stop if w in GENERIC_ACTIVITY_WORDS)
+        generic_ratio = generic_hits / max(1, len(non_stop))
+        if generic_ratio >= 0.75:
+            score -= 20
+        elif generic_ratio >= 0.5:
+            score -= 10
+
+    return max(0, min(100, score))
+
+
+def _evaluate_activity_set(activities: list[str]) -> dict[str, Any]:
+    scored = [{"activity": a, "score": _activity_quality_score(a)} for a in activities]
+    weak = [x["activity"] for x in scored if x["score"] < ACTIVITY_REWRITE_THRESHOLD]
+    avg = round(sum(x["score"] for x in scored) / len(scored), 1) if scored else 0.0
+    return {
+        "average_score": avg,
+        "weak_count": len(weak),
+        "weak_activities": weak[:8],
+        "total": len(scored),
+    }
+
+
+def _promote_best_activities(primary: list[str], pool: list[str], target: int) -> list[str]:
+    seen: set[str] = set()
+    ranked = sorted(
+        [a for a in primary if a],
+        key=lambda x: (_activity_quality_score(x), -len(_strip_activity_tags(x))),
+        reverse=True,
+    )
+    out: list[str] = []
+    for act in ranked:
+        k = act.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(act)
+
+    if len(out) < target:
+        pool_ranked = sorted(
+            [a for a in pool if a],
+            key=lambda x: (_activity_quality_score(x), -len(_strip_activity_tags(x))),
+            reverse=True,
+        )
+        for act in pool_ranked:
+            if len(out) >= target:
+                break
+            k = act.lower()
+            if k in seen:
+                continue
+            seen.add(k)
+            out.append(act)
+    return out[:target]
 
 
 def _looks_marketing(line: str) -> bool:
@@ -745,6 +910,12 @@ def _merge_activity_sets(
         seen.add(key)
         merged.append(tagged)
 
+    merged = sorted(
+        merged,
+        key=lambda x: (_activity_quality_score(x), -len(_strip_activity_tags(x))),
+        reverse=True,
+    )
+
     merged = _ensure_lane_coverage(
         activities=merged,
         candidate_pool=deterministic_activities,
@@ -759,12 +930,24 @@ def _merge_activity_sets(
     implementation_max = int(profile.get("implementation_max", 30))
 
     commitment_count = min(commitment_max, max(commitment_min, commitment_target))
-    commitment = merged[:commitment_count]
+    commitment = _promote_best_activities(
+        primary=merged,
+        pool=deterministic_activities,
+        target=commitment_count,
+    )
     if len(commitment) < commitment_min:
-        commitment = merged[:max(commitment_min, len(commitment))]
+        commitment = _promote_best_activities(
+            primary=commitment + merged,
+            pool=deterministic_activities,
+            target=max(commitment_min, len(commitment)),
+        )
 
     implementation_count = min(implementation_max, max(len(commitment), implementation_target))
-    implementation = merged[:implementation_count]
+    implementation = _promote_best_activities(
+        primary=merged,
+        pool=deterministic_activities,
+        target=implementation_count,
+    )
     return commitment, implementation
 
 
@@ -851,15 +1034,49 @@ def _sanitize_title(text: str, fallback: str) -> str:
 
 def _sanitize_activity(activity: str) -> str:
     cleaned = re.sub(r"^[-*•\d\.\)\s]+", "", _strip_activity_tags(activity))
+    cleaned = cleaned.replace("_", " ")
+    cleaned = cleaned.replace("/", " ")
+    cleaned = re.sub(r"\([^)]*\)", "", cleaned)
+    cleaned = re.split(r"\s[—-]\s|:\s|;\s|\.\s", cleaned)[0]
+    cleaned = re.sub(r"[^A-Za-z0-9\-\s]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     if not cleaned:
         return ""
+    while True:
+        parts = cleaned.split()
+        if not parts:
+            break
+        tail = parts[-1].lower()
+        if tail in {"is", "are", "was", "were", "to", "for", "with", "and", "or", "of"}:
+            cleaned = " ".join(parts[:-1]).strip()
+            continue
+        break
+    if not cleaned:
+        return ""
     words = cleaned.split()
-    if len(words) > 11:
-        cleaned = " ".join(words[:11])
+    normalized_words: list[str] = []
+    for idx, token in enumerate(words):
+        plain = re.sub(r"[^A-Za-z0-9\-]", "", token).strip()
+        if not plain:
+            continue
+        if idx > 0 and plain.lower() in NOISY_ACTIVITY_WORDS:
+            continue
+        upper = plain.upper()
+        if upper in ACTIVITY_ACRONYMS:
+            normalized_words.append(upper)
+        else:
+            normalized_words.append(plain.lower())
+    words = normalized_words
+    if not words:
+        return ""
+    if len(words) > 10:
+        words = words[:10]
+    cleaned = " ".join(words)
     first = cleaned.split()[0].lower() if cleaned.split() else ""
     if first not in ACTION_VERBS:
         cleaned = f"Define {cleaned[0].lower() + cleaned[1:]}" if len(cleaned) > 1 else "Define scope"
+    if cleaned:
+        cleaned = cleaned[0].upper() + cleaned[1:]
     return cleaned[:120]
 
 
@@ -1169,6 +1386,7 @@ def _normalize_candidate(
     units: list[dict],
     file_name: str,
     understanding_check: dict | None = None,
+    max_activities: int = 12,
 ) -> dict:
     if not isinstance(data, dict):
         raise LLMClientError("Model returned non-object JSON. Expected a JSON object.")
@@ -1213,11 +1431,11 @@ def _normalize_candidate(
         tagged = _format_activity_with_tags(act, _coerce_activity_tags(raw_tags, act))
         if tagged:
             candidate["activities"].append(tagged)
-        if len(candidate["activities"]) >= 12:
+        if len(candidate["activities"]) >= max_activities:
             break
 
     if len(candidate["activities"]) < 2:
-        candidate["activities"] = fallback["activities"][:12]
+        candidate["activities"] = fallback["activities"][:max_activities]
 
     raw_evidence = data.get("Evidence") or data.get("evidence") or fallback["evidence"]
     refs: list[str] = []
@@ -1249,7 +1467,7 @@ def _normalize_candidate(
             activities=candidate["activities"] or fallback["activities"],
             fallback_scope=candidate["scope"] or fallback["scope"],
         )
-        candidate["activities"] = (candidate["activities"] or fallback["activities"])[:12]
+        candidate["activities"] = (candidate["activities"] or fallback["activities"])[:max_activities]
         candidate["evidence"] = candidate["evidence"] or fallback["evidence"]
 
     return candidate
@@ -1277,6 +1495,9 @@ class CandidateGraphState(TypedDict, total=False):
     implementation_activities: list[str]
     deterministic_activities: list[str]
     structured_activities: list[str]
+    commitment_quality: dict[str, Any]
+    implementation_quality: dict[str, Any]
+    rewrite_summary: dict[str, Any]
 
 
 def _candidate_graph_prepare_node(state: CandidateGraphState) -> CandidateGraphState:
@@ -1403,6 +1624,7 @@ def _candidate_graph_refine_node(state: CandidateGraphState) -> CandidateGraphSt
             units=units,
             file_name=file_name,
             understanding_check=state.get("understanding_check") or {},
+            max_activities=max(12, int(profile.get("commitment_max", 16))),
         )
     else:
         candidate = fallback_candidate
@@ -1439,6 +1661,154 @@ def _candidate_graph_refine_node(state: CandidateGraphState) -> CandidateGraphSt
     }
 
 
+def _deterministic_rewrite_activity(activity: str) -> str:
+    plain = _strip_activity_tags(activity)
+    tokens = [w for w in re.findall(r"[A-Za-z0-9]+", plain) if w]
+    if not tokens:
+        return activity
+    filtered = [w for w in tokens if w.lower() not in STOPWORDS and len(w) > 2]
+    if len(filtered) > 7:
+        filtered = filtered[:7]
+    if not filtered:
+        filtered = tokens[:5]
+    phrase = " ".join(w.lower() for w in filtered)
+    rewritten = _sanitize_activity(f"Implement {phrase}")
+    return rewritten or activity
+
+
+def _rewrite_weak_activities_with_llm(
+    weak_items: list[dict[str, Any]],
+    provider: str,
+    model: str,
+    api_key: str,
+    base_url: str,
+) -> dict[str, str]:
+    if not (provider and model and weak_items):
+        return {}
+    payload = [
+        {"id": str(item.get("id")), "activity": str(item.get("activity") or ""), "tags": item.get("tags") or []}
+        for item in weak_items
+    ]
+    prompt = f"""
+You are an Activity Critic and Rewriter for roadmap commitments.
+
+Task:
+- Rewrite only weak activities into implementation-ready, concrete tasks.
+- Keep business meaning same.
+- Keep under 10 words.
+- Must start with a strong verb.
+- No vague terms.
+- Keep tags unchanged.
+
+Return strict JSON object:
+{{
+  "rewrites": [
+    {{"id": "", "activity": ""}}
+  ]
+}}
+
+Weak activities:
+{payload}
+""".strip()
+    try:
+        raw = call_llm_json(
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            prompt=prompt,
+        )
+    except Exception:
+        return {}
+    rows = raw.get("rewrites") if isinstance(raw, dict) else []
+    out: dict[str, str] = {}
+    if not isinstance(rows, list):
+        return out
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        rid = str(row.get("id") or "").strip()
+        act = str(row.get("activity") or "").strip()
+        if not rid or not act:
+            continue
+        out[rid] = act
+    return out
+
+
+def _candidate_graph_critic_rewrite_node(state: CandidateGraphState) -> CandidateGraphState:
+    commitment = list(state.get("commitment_activities") or [])
+    implementation = list(state.get("implementation_activities") or [])
+    if not commitment and not implementation:
+        return {}
+
+    def _rewrite_list(name: str, items: list[str]) -> tuple[list[str], int]:
+        weak_rows: list[dict[str, Any]] = []
+        for idx, item in enumerate(items):
+            score = _activity_quality_score(item)
+            if score >= ACTIVITY_REWRITE_THRESHOLD:
+                continue
+            weak_rows.append(
+                {
+                    "id": f"{name}:{idx}",
+                    "index": idx,
+                    "activity": _strip_activity_tags(item),
+                    "tags": _activity_tags(item),
+                    "score": score,
+                }
+            )
+        if not weak_rows:
+            return items, 0
+
+        llm_rewrites = _rewrite_weak_activities_with_llm(
+            weak_items=weak_rows,
+            provider=state.get("provider") or "",
+            model=state.get("model") or "",
+            api_key=state.get("api_key") or "",
+            base_url=state.get("base_url") or "",
+        )
+
+        out = list(items)
+        rewritten = 0
+        for row in weak_rows:
+            idx = int(row["index"])
+            old_item = out[idx]
+            old_score = int(row["score"])
+            candidate_text = llm_rewrites.get(str(row["id"])) or _deterministic_rewrite_activity(old_item)
+            candidate_text = _sanitize_activity(candidate_text)
+            if not candidate_text:
+                continue
+            new_item = _format_activity_with_tags(candidate_text, row.get("tags") or [])
+            if _activity_quality_score(new_item) >= old_score and new_item != old_item:
+                out[idx] = new_item
+                rewritten += 1
+        return out, rewritten
+
+    commitment_rewritten, commitment_changed = _rewrite_list("c", commitment)
+    implementation_rewritten, implementation_changed = _rewrite_list("i", implementation)
+    commitment_quality = _evaluate_activity_set(commitment_rewritten)
+    implementation_quality = _evaluate_activity_set(implementation_rewritten)
+
+    candidate = dict(state.get("candidate") or {})
+    candidate["activities"] = commitment_rewritten
+    candidate["commitment_activities"] = commitment_rewritten
+    candidate["implementation_activities"] = implementation_rewritten
+    candidate["commitment_quality"] = commitment_quality
+    candidate["implementation_quality"] = implementation_quality
+
+    return {
+        "candidate": candidate,
+        "commitment_activities": commitment_rewritten,
+        "implementation_activities": implementation_rewritten,
+        "commitment_quality": commitment_quality,
+        "implementation_quality": implementation_quality,
+        "rewrite_summary": {
+            "commitment_rewritten": commitment_changed,
+            "implementation_rewritten": implementation_changed,
+            "total_rewritten": commitment_changed + implementation_changed,
+        },
+    }
+
+
 _CANDIDATE_GRAPH = None
 
 
@@ -1450,10 +1820,12 @@ def _candidate_graph():
     graph.add_node("prepare", _candidate_graph_prepare_node)
     graph.add_node("llm_candidate", _candidate_graph_llm_node)
     graph.add_node("deterministic_refine", _candidate_graph_refine_node)
+    graph.add_node("critic_rewrite", _candidate_graph_critic_rewrite_node)
     graph.set_entry_point("prepare")
     graph.add_edge("prepare", "llm_candidate")
     graph.add_edge("llm_candidate", "deterministic_refine")
-    graph.add_edge("deterministic_refine", END)
+    graph.add_edge("deterministic_refine", "critic_rewrite")
+    graph.add_edge("critic_rewrite", END)
     _CANDIDATE_GRAPH = graph.compile()
     return _CANDIDATE_GRAPH
 
@@ -1824,6 +2196,9 @@ def generate_roadmap_candidate_from_document(
     candidate = state.get("candidate") or fallback
     commitment_activities = state.get("commitment_activities") or candidate.get("activities") or []
     implementation_activities = state.get("implementation_activities") or commitment_activities
+    commitment_quality = state.get("commitment_quality") or _evaluate_activity_set(commitment_activities)
+    implementation_quality = state.get("implementation_quality") or _evaluate_activity_set(implementation_activities)
+    rewrite_summary = state.get("rewrite_summary") or {"commitment_rewritten": 0, "implementation_rewritten": 0, "total_rewritten": 0}
     candidate["activities"] = commitment_activities
     llm_attempted = bool(state.get("llm_attempted"))
     llm_success = bool(state.get("llm_success"))
@@ -1845,6 +2220,8 @@ def generate_roadmap_candidate_from_document(
             "Activities": commitment_activities,
             "CommitmentActivities": commitment_activities,
             "ImplementationActivities": implementation_activities,
+            "CommitmentActivityQuality": commitment_quality,
+            "ImplementationActivityQuality": implementation_quality,
             "Evidence": candidate["evidence"],
             "Confidence": candidate["confidence"],
         },
@@ -1865,6 +2242,7 @@ def generate_roadmap_candidate_from_document(
             "commitment_target": profile.get("commitment_target"),
             "implementation_target": profile.get("implementation_target"),
         },
+        "rewrite_summary": rewrite_summary,
     }
     flat = {
         "document_class": {

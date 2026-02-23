@@ -435,6 +435,7 @@ type UnderstandingApprovalInput = {
   explicit_outcomes: string[]
   dominant_theme: string
   confidence: string
+  activity_mode: 'commitment' | 'implementation'
   expected_version_no: number
 }
 
@@ -2771,6 +2772,7 @@ function App() {
               reviewScope={reviewScope}
               setReviewScope={setReviewScope}
               reviewActivities={reviewActivities}
+              setReviewActivities={setReviewActivities}
               updateReviewActivity={updateReviewActivity}
               toggleReviewActivityTag={toggleReviewActivityTag}
               addReviewActivity={addReviewActivity}
@@ -3882,6 +3884,7 @@ type IntakeProps = {
   reviewScope: string
   setReviewScope: Dispatch<SetStateAction<string>>
   reviewActivities: string[]
+  setReviewActivities: Dispatch<SetStateAction<string[]>>
   updateReviewActivity: (index: number, value: string) => void
   toggleReviewActivityTag: (index: number, tag: ActivityTag) => void
   addReviewActivity: () => void
@@ -4496,6 +4499,7 @@ function IntakePage({
   reviewScope,
   setReviewScope,
   reviewActivities,
+  setReviewActivities,
   updateReviewActivity,
   toggleReviewActivityTag,
   addReviewActivity,
@@ -4535,6 +4539,7 @@ function IntakePage({
   const [understandingOutcomesText, setUnderstandingOutcomesText] = useState('')
   const [understandingTheme, setUnderstandingTheme] = useState('')
   const [understandingConfidence, setUnderstandingConfidence] = useState('medium')
+  const [reviewActivityMode, setReviewActivityMode] = useState<'commitment' | 'implementation'>('commitment')
   const [intakeSeed, setIntakeSeed] = useState<IntakeSeedMeta>({
     priority: 'medium',
     project_context: 'client',
@@ -4586,6 +4591,28 @@ function IntakePage({
   const supportResolution = selectedAnalysisForItem?.output_json?.support_resolution as
     | { applied?: boolean; applied_at?: string; next_step?: string; intent_clear?: boolean }
     | undefined
+  const roadmapCandidate = selectedAnalysisForItem?.output_json?.roadmap_candidate as
+    | {
+        Activities?: string[]
+        CommitmentActivities?: string[]
+        ImplementationActivities?: string[]
+        CommitmentActivityQuality?: { average_score?: number; weak_count?: number; total?: number }
+        ImplementationActivityQuality?: { average_score?: number; weak_count?: number; total?: number }
+      }
+    | undefined
+  const selectedActivityMode = ((selectedAnalysisForItem?.output_json?.activity_mode_selected as string | undefined) || '').toLowerCase()
+  const candidateCommitmentActivities = normalizeActivitiesForEditor(
+    (roadmapCandidate?.CommitmentActivities || roadmapCandidate?.Activities || []) as string[],
+  )
+  const candidateImplementationActivities = normalizeActivitiesForEditor(
+    (roadmapCandidate?.ImplementationActivities || []) as string[],
+  )
+  const activeCandidateActivities =
+    reviewActivityMode === 'implementation' ? candidateImplementationActivities : candidateCommitmentActivities
+  const activeQuality =
+    reviewActivityMode === 'implementation'
+      ? roadmapCandidate?.ImplementationActivityQuality
+      : roadmapCandidate?.CommitmentActivityQuality
   const isUnderstandingPending = selectedIntakeItem?.status === 'understanding_pending'
   const normalizedIntent = (understandingIntent || '').trim()
   const isIntentUnclear = !normalizedIntent || normalizedIntent.toLowerCase() === 'document intent is unclear.'
@@ -4660,6 +4687,18 @@ function IntakePage({
     setUnderstandingTheme(theme)
     setUnderstandingConfidence(confidence)
   }, [selectedIntakeItem?.id, isUnderstandingPending, understandingCheck])
+
+  useEffect(() => {
+    if (!selectedIntakeItem) {
+      setReviewActivityMode('commitment')
+      return
+    }
+    if (selectedActivityMode === 'implementation' || selectedActivityMode === 'commitment') {
+      setReviewActivityMode(selectedActivityMode)
+      return
+    }
+    setReviewActivityMode('commitment')
+  }, [selectedIntakeItem?.id, selectedActivityMode])
   const prettyStage = (value: string) => value.replaceAll('_', ' ')
   const formatBucketType = (projectContext: string, initiativeType: string) =>
     `${projectContext === 'internal' ? 'Internal' : 'Client'} / ${initiativeType === 'new_product' ? 'New Product' : 'New Feature'}`
@@ -4932,6 +4971,28 @@ function IntakePage({
                       <option value="low">Low</option>
                     </select>
                   </div>
+                  <div className="understanding-row">
+                    <span className="understanding-label">Activity mode for generated candidate</span>
+                    <div className="segmented-control">
+                      <button
+                        type="button"
+                        className={reviewActivityMode === 'commitment' ? 'active' : ''}
+                        onClick={() => setReviewActivityMode('commitment')}
+                      >
+                        Commitment ({candidateCommitmentActivities.length || reviewActivities.length})
+                      </button>
+                      <button
+                        type="button"
+                        className={reviewActivityMode === 'implementation' ? 'active' : ''}
+                        onClick={() => setReviewActivityMode('implementation')}
+                      >
+                        Implementation ({candidateImplementationActivities.length || 0})
+                      </button>
+                    </div>
+                    <p className="muted" style={{ margin: 0 }}>
+                      Selected mode decides which activity list is written into Intake Draft.
+                    </p>
+                  </div>
                   <div className="understanding-meta">
                     <span>Outcomes captured: {understandingOutcomes.length}</span>
                     {llmRuntime && (
@@ -5090,6 +5151,7 @@ function IntakePage({
                         explicit_outcomes: understandingOutcomes,
                         dominant_theme: understandingTheme,
                         confidence: understandingConfidence,
+                        activity_mode: reviewActivityMode,
                         expected_version_no: selectedIntakeItem.version_no,
                       })
                       await submitReview(
@@ -5110,6 +5172,7 @@ function IntakePage({
                         explicit_outcomes: understandingOutcomes,
                         dominant_theme: understandingTheme,
                         confidence: understandingConfidence,
+                        activity_mode: reviewActivityMode,
                         expected_version_no: selectedIntakeItem.version_no,
                       })
                     }
@@ -5142,6 +5205,39 @@ function IntakePage({
               Scope
               <textarea rows={3} value={reviewScope} onChange={(e) => setReviewScope(e.target.value)} />
             </label>
+            {(candidateCommitmentActivities.length > 0 || candidateImplementationActivities.length > 0) && (
+              <div className="candidate-activity-tabs">
+                <div className="line-item">
+                  <strong>Generated Activity Sets</strong>
+                  <button
+                    className="ghost-btn tiny"
+                    type="button"
+                    onClick={() => setReviewActivities(activeCandidateActivities)}
+                  >
+                    Load Selected List
+                  </button>
+                </div>
+                <div className="segmented-control">
+                  <button
+                    type="button"
+                    className={reviewActivityMode === 'commitment' ? 'active' : ''}
+                    onClick={() => setReviewActivityMode('commitment')}
+                  >
+                    Commitment ({candidateCommitmentActivities.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={reviewActivityMode === 'implementation' ? 'active' : ''}
+                    onClick={() => setReviewActivityMode('implementation')}
+                  >
+                    Implementation ({candidateImplementationActivities.length})
+                  </button>
+                </div>
+                <p className="muted" style={{ margin: 0 }}>
+                  Quality score: {activeQuality?.average_score ?? '-'} / 100, weak items: {activeQuality?.weak_count ?? '-'}.
+                </p>
+              </div>
+            )}
 
             <div className="activity-editor">
               <div className="line-item">

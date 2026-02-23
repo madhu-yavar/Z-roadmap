@@ -39,6 +39,7 @@ class UnderstandingApprovalIn(BaseModel):
     explicit_outcomes: list[str] = []
     dominant_theme: str = ""
     confidence: str = "medium"
+    activity_mode: str = "commitment"
     expected_version_no: int
 
 
