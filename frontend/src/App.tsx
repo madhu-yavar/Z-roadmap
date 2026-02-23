@@ -4525,6 +4525,8 @@ function IntakePage({
   const [metaModalDoc, setMetaModalDoc] = useState<DocumentItem | null>(null)
   const [manualModalOpen, setManualModalOpen] = useState(false)
   const [uploadSidebarOpen, setUploadSidebarOpen] = useState(false)
+  const [reviewTagFilter, setReviewTagFilter] = useState<'ALL' | ActivityTag>('ALL')
+  const [reviewSortDir, setReviewSortDir] = useState<'asc' | 'desc'>('asc')
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewTitle, setPreviewTitle] = useState('')
   const [previewUrl, setPreviewUrl] = useState('')
@@ -4601,11 +4603,16 @@ function IntakePage({
       }
     | undefined
   const selectedActivityMode = ((selectedAnalysisForItem?.output_json?.activity_mode_selected as string | undefined) || '').toLowerCase()
-  const candidateCommitmentActivities = normalizeActivitiesForEditor(
-    (roadmapCandidate?.CommitmentActivities || roadmapCandidate?.Activities || []) as string[],
+  const candidateCommitmentActivities = useMemo(
+    () =>
+      normalizeActivitiesForEditor(
+        (roadmapCandidate?.CommitmentActivities || roadmapCandidate?.Activities || []) as string[],
+      ),
+    [roadmapCandidate],
   )
-  const candidateImplementationActivities = normalizeActivitiesForEditor(
-    (roadmapCandidate?.ImplementationActivities || []) as string[],
+  const candidateImplementationActivities = useMemo(
+    () => normalizeActivitiesForEditor((roadmapCandidate?.ImplementationActivities || []) as string[]),
+    [roadmapCandidate],
   )
   const activeCandidateActivities =
     reviewActivityMode === 'implementation' ? candidateImplementationActivities : candidateCommitmentActivities
@@ -4613,6 +4620,26 @@ function IntakePage({
     reviewActivityMode === 'implementation'
       ? roadmapCandidate?.ImplementationActivityQuality
       : roadmapCandidate?.CommitmentActivityQuality
+  const reviewRows = useMemo(() => {
+    const rank: Record<ActivityTag, number> = { FE: 0, BE: 1, AI: 2 }
+    const rows = reviewActivities.map((activity, index) => {
+      const parsed = parseActivityEntry(activity)
+      const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(parsed.text || activity)]
+      return { activity, index, parsed: { text: parsed.text, tags } }
+    })
+    const filtered =
+      reviewTagFilter === 'ALL' ? rows : rows.filter((row) => row.parsed.tags.includes(reviewTagFilter))
+    filtered.sort((a, b) => {
+      const aTag = a.parsed.tags[0] || 'BE'
+      const bTag = b.parsed.tags[0] || 'BE'
+      const byTag = rank[aTag] - rank[bTag]
+      if (byTag !== 0) return reviewSortDir === 'asc' ? byTag : -byTag
+      const byText = (a.parsed.text || '').localeCompare(b.parsed.text || '', undefined, { sensitivity: 'base' })
+      if (byText !== 0) return reviewSortDir === 'asc' ? byText : -byText
+      return reviewSortDir === 'asc' ? a.index - b.index : b.index - a.index
+    })
+    return filtered
+  }, [reviewActivities, reviewTagFilter, reviewSortDir])
   const isUnderstandingPending = selectedIntakeItem?.status === 'understanding_pending'
   const normalizedIntent = (understandingIntent || '').trim()
   const isIntentUnclear = !normalizedIntent || normalizedIntent.toLowerCase() === 'document intent is unclear.'
@@ -4691,14 +4718,27 @@ function IntakePage({
   useEffect(() => {
     if (!selectedIntakeItem) {
       setReviewActivityMode('commitment')
+      setReviewTagFilter('ALL')
+      setReviewSortDir('asc')
       return
     }
     if (selectedActivityMode === 'implementation' || selectedActivityMode === 'commitment') {
       setReviewActivityMode(selectedActivityMode)
+      if (selectedActivityMode === 'implementation' && candidateImplementationActivities.length > 0) {
+        setReviewActivities(candidateImplementationActivities)
+      } else if (selectedActivityMode === 'commitment' && candidateCommitmentActivities.length > 0) {
+        setReviewActivities(candidateCommitmentActivities)
+      }
       return
     }
     setReviewActivityMode('commitment')
-  }, [selectedIntakeItem?.id, selectedActivityMode])
+  }, [
+    selectedIntakeItem?.id,
+    selectedActivityMode,
+    candidateImplementationActivities,
+    candidateCommitmentActivities,
+    setReviewActivities,
+  ])
   const prettyStage = (value: string) => value.replaceAll('_', ' ')
   const formatBucketType = (projectContext: string, initiativeType: string) =>
     `${projectContext === 'internal' ? 'Internal' : 'Client'} / ${initiativeType === 'new_product' ? 'New Product' : 'New Feature'}`
@@ -5079,9 +5119,29 @@ function IntakePage({
                 <div className="activity-editor">
                   <div className="line-item">
                     <strong>Activities (inline edit)</strong>
-                    <button className="ghost-btn tiny" type="button" onClick={addReviewActivity}>
-                      + Add Activity
-                    </button>
+                    <div className="activity-filter-tools">
+                      <select
+                        value={reviewTagFilter}
+                        onChange={(e) => setReviewTagFilter(e.target.value as 'ALL' | ActivityTag)}
+                        title="Filter by tag"
+                      >
+                        <option value="ALL">All</option>
+                        <option value="FE">FE</option>
+                        <option value="BE">BE</option>
+                        <option value="AI">AI</option>
+                      </select>
+                      <button
+                        className="ghost-btn tiny"
+                        type="button"
+                        title="Toggle sort direction"
+                        onClick={() => setReviewSortDir((s) => (s === 'asc' ? 'desc' : 'asc'))}
+                      >
+                        {reviewSortDir === 'asc' ? '↑' : '↓'}
+                      </button>
+                      <button className="ghost-btn tiny" type="button" onClick={addReviewActivity}>
+                        + Add Activity
+                      </button>
+                    </div>
                   </div>
                   <table className="activity-table">
                     <thead>
@@ -5093,11 +5153,20 @@ function IntakePage({
                       </tr>
                     </thead>
                     <tbody>
-                      {reviewActivities.map((activity, idx) => {
-                        const parsed = parseActivityEntry(activity)
+                      {reviewRows.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="muted">
+                            No activities for selected filter.
+                          </td>
+                        </tr>
+                      )}
+                      {reviewRows.map((row, rowIndex) => {
+                        const activity = row.activity
+                        const idx = row.index
+                        const parsed = row.parsed
                         return (
                           <tr key={`${idx}-${activity}`}>
-                            <td>{idx + 1}</td>
+                            <td>{rowIndex + 1}</td>
                             <td>
                               <div className="activity-chip-row">
                                 {ACTIVITY_TAGS.map((tag) => {
@@ -5221,14 +5290,20 @@ function IntakePage({
                   <button
                     type="button"
                     className={reviewActivityMode === 'commitment' ? 'active' : ''}
-                    onClick={() => setReviewActivityMode('commitment')}
+                    onClick={() => {
+                      setReviewActivityMode('commitment')
+                      setReviewActivities(candidateCommitmentActivities)
+                    }}
                   >
                     Commitment ({candidateCommitmentActivities.length})
                   </button>
                   <button
                     type="button"
                     className={reviewActivityMode === 'implementation' ? 'active' : ''}
-                    onClick={() => setReviewActivityMode('implementation')}
+                    onClick={() => {
+                      setReviewActivityMode('implementation')
+                      setReviewActivities(candidateImplementationActivities)
+                    }}
                   >
                     Implementation ({candidateImplementationActivities.length})
                   </button>
@@ -5242,9 +5317,29 @@ function IntakePage({
             <div className="activity-editor">
               <div className="line-item">
                 <strong>Activities (inline edit)</strong>
-                <button className="ghost-btn tiny" type="button" onClick={addReviewActivity}>
-                  + Add Activity
-                </button>
+                <div className="activity-filter-tools">
+                  <select
+                    value={reviewTagFilter}
+                    onChange={(e) => setReviewTagFilter(e.target.value as 'ALL' | ActivityTag)}
+                    title="Filter by tag"
+                  >
+                    <option value="ALL">All</option>
+                    <option value="FE">FE</option>
+                    <option value="BE">BE</option>
+                    <option value="AI">AI</option>
+                  </select>
+                  <button
+                    className="ghost-btn tiny"
+                    type="button"
+                    title="Toggle sort direction"
+                    onClick={() => setReviewSortDir((s) => (s === 'asc' ? 'desc' : 'asc'))}
+                  >
+                    {reviewSortDir === 'asc' ? '↑' : '↓'}
+                  </button>
+                  <button className="ghost-btn tiny" type="button" onClick={addReviewActivity}>
+                    + Add Activity
+                  </button>
+                </div>
               </div>
               <table className="activity-table">
                 <thead>
@@ -5256,11 +5351,20 @@ function IntakePage({
                   </tr>
                 </thead>
                 <tbody>
-                  {reviewActivities.map((activity, idx) => {
-                    const parsed = parseActivityEntry(activity)
+                  {reviewRows.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="muted">
+                        No activities for selected filter.
+                      </td>
+                    </tr>
+                  )}
+                  {reviewRows.map((row, rowIndex) => {
+                    const activity = row.activity
+                    const idx = row.index
+                    const parsed = row.parsed
                     return (
                     <tr key={`${idx}-${activity}`}>
-                      <td>{idx + 1}</td>
+                      <td>{rowIndex + 1}</td>
                       <td>
                         <div className="activity-chip-row">
                           {ACTIVITY_TAGS.map((tag) => {

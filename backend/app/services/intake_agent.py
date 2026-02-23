@@ -1208,6 +1208,58 @@ def _valid_evidence_refs(evidence: list[str], units: list[dict]) -> list[str]:
     return [u["ref"] for u in units[:3] if u.get("ref")]
 
 
+def _expand_evidence_refs(
+    evidence: list[str],
+    units: list[dict],
+    activities: list[str],
+    max_refs: int = 8,
+) -> list[str]:
+    refs = _valid_evidence_refs(evidence, units)
+    valid_refs = {u.get("ref") for u in units if u.get("ref")}
+    out: list[str] = []
+    seen: set[str] = set()
+    for ref in refs:
+        if ref in valid_refs and ref not in seen:
+            out.append(ref)
+            seen.add(ref)
+            if len(out) >= max_refs:
+                return out
+
+    activity_terms: set[str] = set()
+    for act in activities[:20]:
+        text = _strip_activity_tags(act).lower()
+        for tok in re.findall(r"[a-z0-9]+", text):
+            if len(tok) >= 4 and tok not in STOPWORDS:
+                activity_terms.add(tok)
+        if len(activity_terms) >= 40:
+            break
+
+    for unit in units[:1200]:
+        ref = str(unit.get("ref") or "").strip()
+        text = str(unit.get("text") or "").strip()
+        low = text.lower()
+        if not ref or ref in seen:
+            continue
+        if _is_numbered_heading(text) or _has_activity_signal(text):
+            out.append(ref)
+            seen.add(ref)
+        elif activity_terms and any(t in low for t in activity_terms):
+            out.append(ref)
+            seen.add(ref)
+        if len(out) >= max_refs:
+            break
+
+    if len(out) < max_refs:
+        for unit in units:
+            ref = str(unit.get("ref") or "").strip()
+            if ref and ref not in seen:
+                out.append(ref)
+                seen.add(ref)
+            if len(out) >= max_refs:
+                break
+    return out[:max_refs]
+
+
 def _self_check(candidate: dict) -> bool:
     title_ok = 3 <= _word_count(candidate.get("title", "")) <= 6
     activities = candidate.get("activities") or []
@@ -1650,6 +1702,12 @@ def _candidate_graph_refine_node(state: CandidateGraphState) -> CandidateGraphSt
     candidate["activities"] = commitment_activities
     candidate["commitment_activities"] = commitment_activities
     candidate["implementation_activities"] = implementation_activities
+    candidate["evidence"] = _expand_evidence_refs(
+        evidence=candidate.get("evidence") or fallback_candidate.get("evidence") or [],
+        units=units,
+        activities=commitment_activities + implementation_activities,
+        max_refs=8,
+    )
     if not candidate.get("evidence"):
         candidate["evidence"] = fallback_candidate.get("evidence") or []
     return {

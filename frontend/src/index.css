@@ -2497,6 +2497,22 @@ th {
   gap: 8px;
 }
 
+.activity-filter-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.activity-filter-tools select {
+  min-width: 86px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
 .activity-table {
   table-layout: auto;
 }
