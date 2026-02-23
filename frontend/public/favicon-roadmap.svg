@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Roadmap favicon">
+  <defs>
+    <linearGradient id="roadGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8a8a8a" />
+      <stop offset="100%" stop-color="#646464" />
+    </linearGradient>
+  </defs>
+
+  <rect width="64" height="64" fill="#ececec" />
+
+  <!-- Road body -->
+  <path
+    d="M4 2 C26 4, 40 12, 58 22 C41 28, 23 34, 7 46 C25 49, 43 54, 60 62"
+    fill="none"
+    stroke="url(#roadGradient)"
+    stroke-width="12"
+    stroke-linecap="round"
+  />
+  <path
+    d="M4 2 C26 4, 40 12, 58 22 C41 28, 23 34, 7 46 C25 49, 43 54, 60 62"
+    fill="none"
+    stroke="#f7f7f7"
+    stroke-width="1.8"
+    stroke-linecap="round"
+    stroke-dasharray="3 3"
+  />
+
+  <!-- Pins -->
+  <g transform="translate(19,11) scale(0.63)">
+    <path d="M9 1C4.6 1 1 4.6 1 9c0 5.4 8 15 8 15s8-9.6 8-15c0-4.4-3.6-8-8-8z" fill="#8b6cf6" />
+    <circle cx="9" cy="9" r="3.4" fill="#f4f4f4" />
+  </g>
+  <g transform="translate(46,17) scale(0.62)">
+    <path d="M9 1C4.6 1 1 4.6 1 9c0 5.4 8 15 8 15s8-9.6 8-15c0-4.4-3.6-8-8-8z" fill="#31b9b8" />
+    <circle cx="9" cy="9" r="3.4" fill="#f4f4f4" />
+  </g>
+  <g transform="translate(14,31) scale(0.66)">
+    <path d="M9 1C4.6 1 1 4.6 1 9c0 5.4 8 15 8 15s8-9.6 8-15c0-4.4-3.6-8-8-8z" fill="#f2b01f" />
+    <circle cx="9" cy="9" r="3.4" fill="#f4f4f4" />
+  </g>
+  <g transform="translate(40,41) scale(0.7)">
+    <path d="M9 1C4.6 1 1 4.6 1 9c0 5.4 8 15 8 15s8-9.6 8-15c0-4.4-3.6-8-8-8z" fill="#ef2e2e" />
+    <circle cx="9" cy="9" r="3.4" fill="#f4f4f4" />
+  </g>
+</svg>
