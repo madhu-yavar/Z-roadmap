@@ -106,6 +106,7 @@ ACTION_VERBS = {
     "capture",
     "design",
     "align",
+    "handle",
 }
 
 ALLOWED_ACTIVITY_TAGS = ("FE", "BE", "AI")
@@ -308,6 +309,39 @@ GENERIC_ACTIVITY_WORDS = {
 ACTIVITY_ACRONYMS = {"API", "UI", "UX", "JSON", "RBAC", "JWT", "FTE", "LLM", "AI", "ML", "NLP", "OCR"}
 NOISY_ACTIVITY_WORDS = {"requires", "require", "should", "must", "would", "could", "may"}
 ACTIVITY_REWRITE_THRESHOLD = 70
+ACTIVITY_NOISE_PATTERNS = (
+    r"\bpage\s*\d+\s*line\s*\d+\b",
+    r"\bline\s*\d+\b",
+    r"\bpage\s*\d+\b",
+    r"\bnull\b",
+    r"\bsilently\b",
+    r"\bauto[- ]?fix\b",
+    r"\bbe\s*100\b",
+)
+
+ACTIVITY_PRO_TEMPLATES: list[tuple[str, str]] = [
+    (r"\binput\s+output\s+schema\b", "Define input and output schemas"),
+    (r"\bvalidated?\s+normalized?.*workflow\s*data.*persist", "Define normalized workflow data persistence contract"),
+    (r"\bworkflow\s+context\s+state\b", "Implement workflow context state management"),
+    (r"\bhistory\s+stack\b", "Implement workflow history state tracking"),
+    (r"\bcore\s+edge\s+schema\b", "Define workflow edge schema contract"),
+    (r"\binvalid\s+json\b", "Handle invalid parser JSON with clear error responses"),
+    (r"\bjson\s+extraction.*workflow\s*parser\b", "Implement JSON extraction and workflow parser validation"),
+    (r"\bdangling\s+nodes\b", "Validate and resolve dangling workflow nodes"),
+    (r"\binvalid\s+edge\s+references?\b", "Validate workflow edge references before persistence"),
+    (r"\bdecision\s+branches\b", "Validate completeness of workflow decision branches"),
+    (r"\bdrag[- ]and[- ]drop\b", "Implement structural validation for drag-and-drop workflows"),
+    (r"\bvisual\s+rendering\s+components?\b", "Implement workflow canvas rendering components"),
+    (r"\bworkflow\s+normalizer\b", "Implement workflow normalization and validation rules"),
+    (r"\bapproval\s+placement\b", "Validate workflow approval branch placement rules"),
+    (r"\bpersistence\s+state\s+machine\b", "Implement workflow persistence state machine"),
+    (r"\bworkflow\s+import\b", "Implement workflow import and schema validation"),
+    (r"\bworkflow\s+data\s+contract\b", "Define workflow data contract"),
+    (
+        r"\bworkflow\s+parser\s+deterministic\s+json\s+extraction.*type\s+validation\b",
+        "Implement deterministic workflow parser and type validation",
+    ),
+]
 
 TABULAR_ACTIVITY_FIELD_HINTS = (
     "activity",
@@ -401,6 +435,11 @@ def _activity_verb(activity: str) -> str:
     return re.sub(r"[^a-z]", "", first)
 
 
+def _contains_activity_noise(text: str) -> bool:
+    low = (text or "").lower()
+    return any(re.search(pat, low) for pat in ACTIVITY_NOISE_PATTERNS)
+
+
 def _activity_quality_score(activity: str) -> int:
     plain = _strip_activity_tags(activity).strip()
     if not plain:
@@ -440,6 +479,8 @@ def _activity_quality_score(activity: str) -> int:
         score -= 10
     if any(w in plain.lower().split() for w in NOISY_ACTIVITY_WORDS):
         score -= 10
+    if _contains_activity_noise(plain):
+        score -= 20
 
     non_stop = [w for w in low_words if len(w) > 2 and w not in STOPWORDS]
     if non_stop:
@@ -901,7 +942,10 @@ def _merge_activity_sets(
     merged: list[str] = []
     seen: set[str] = set()
     for item in llm_activities + deterministic_activities:
-        tagged = _format_activity_with_tags(_strip_activity_tags(item))
+        cleaned_item = _sanitize_activity(_strip_activity_tags(item))
+        if not cleaned_item:
+            continue
+        tagged = _format_activity_with_tags(cleaned_item)
         if not tagged:
             continue
         key = tagged.lower()
@@ -1036,12 +1080,25 @@ def _sanitize_activity(activity: str) -> str:
     cleaned = re.sub(r"^[-*•\d\.\)\s]+", "", _strip_activity_tags(activity))
     cleaned = cleaned.replace("_", " ")
     cleaned = cleaned.replace("/", " ")
+    cleaned = re.sub(r"workflowdata", "workflow data", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"workflowparser", "workflow parser", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"workflowca", "workflow canvas", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"validateconnectivity", "validate connectivity", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"validateapprovalplacement", "validate approval placement", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"validatedecisionbrancheserror", "validate decision branch errors", cleaned, flags=re.IGNORECASE)
+    for pat in ACTIVITY_NOISE_PATTERNS:
+        cleaned = re.sub(pat, " ", cleaned, flags=re.IGNORECASE)
     cleaned = re.sub(r"\([^)]*\)", "", cleaned)
     cleaned = re.split(r"\s[—-]\s|:\s|;\s|\.\s", cleaned)[0]
     cleaned = re.sub(r"[^A-Za-z0-9\-\s]", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned)
     if not cleaned:
         return ""
+    low_cleaned = cleaned.lower()
+    for pattern, phrase in ACTIVITY_PRO_TEMPLATES:
+        if re.search(pattern, low_cleaned):
+            cleaned = phrase
+            break
     while True:
         parts = cleaned.split()
         if not parts:
@@ -1218,12 +1275,30 @@ def _expand_evidence_refs(
     valid_refs = {u.get("ref") for u in units if u.get("ref")}
     out: list[str] = []
     seen: set[str] = set()
+    seen_pages: set[int] = set()
+    page_ref_counts: dict[int, int] = {}
+
+    def _page_key(ref: str) -> int:
+        return _parse_page_no(ref)
+
+    def _push(ref: str) -> bool:
+        if not ref or ref in seen or ref not in valid_refs:
+            return False
+        out.append(ref)
+        seen.add(ref)
+        page = _page_key(ref)
+        if page > 0:
+            seen_pages.add(page)
+            page_ref_counts[page] = page_ref_counts.get(page, 0) + 1
+        return True
+
     for ref in refs:
-        if ref in valid_refs and ref not in seen:
-            out.append(ref)
-            seen.add(ref)
-            if len(out) >= max_refs:
-                return out
+        page = _page_key(ref)
+        if page > 0 and page_ref_counts.get(page, 0) >= 2 and len(seen_pages) < 4:
+            continue
+        _push(ref)
+        if len(out) >= max_refs:
+            return out
 
     activity_terms: set[str] = set()
     for act in activities[:20]:
@@ -1234,27 +1309,42 @@ def _expand_evidence_refs(
         if len(activity_terms) >= 40:
             break
 
+    # First pass: diversify evidence across page groups.
     for unit in units[:1200]:
         ref = str(unit.get("ref") or "").strip()
         text = str(unit.get("text") or "").strip()
         low = text.lower()
         if not ref or ref in seen:
             continue
+        page = _page_key(ref)
+        if page > 0 and page in seen_pages:
+            continue
         if _is_numbered_heading(text) or _has_activity_signal(text):
-            out.append(ref)
-            seen.add(ref)
+            _push(ref)
         elif activity_terms and any(t in low for t in activity_terms):
-            out.append(ref)
-            seen.add(ref)
+            _push(ref)
         if len(out) >= max_refs:
             break
+
+    # Second pass: fill remaining slots regardless of page diversity.
+    if len(out) < max_refs:
+        for unit in units[:1200]:
+            ref = str(unit.get("ref") or "").strip()
+            text = str(unit.get("text") or "").strip()
+            low = text.lower()
+            if not ref or ref in seen:
+                continue
+            if _is_numbered_heading(text) or _has_activity_signal(text):
+                _push(ref)
+            elif activity_terms and any(t in low for t in activity_terms):
+                _push(ref)
+            if len(out) >= max_refs:
+                break
 
     if len(out) < max_refs:
         for unit in units:
             ref = str(unit.get("ref") or "").strip()
-            if ref and ref not in seen:
-                out.append(ref)
-                seen.add(ref)
+            _push(ref)
             if len(out) >= max_refs:
                 break
     return out[:max_refs]
@@ -1803,7 +1893,7 @@ def _candidate_graph_critic_rewrite_node(state: CandidateGraphState) -> Candidat
         weak_rows: list[dict[str, Any]] = []
         for idx, item in enumerate(items):
             score = _activity_quality_score(item)
-            if score >= ACTIVITY_REWRITE_THRESHOLD:
+            if score >= ACTIVITY_REWRITE_THRESHOLD and not _contains_activity_noise(item):
                 continue
             weak_rows.append(
                 {

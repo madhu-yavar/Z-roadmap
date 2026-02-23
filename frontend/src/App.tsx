@@ -5120,6 +5120,7 @@ function IntakePage({
                   <div className="line-item">
                     <strong>Activities (inline edit)</strong>
                     <div className="activity-filter-tools">
+                      <span className="filter-label">Tag</span>
                       <select
                         value={reviewTagFilter}
                         onChange={(e) => setReviewTagFilter(e.target.value as 'ALL' | ActivityTag)}
@@ -5318,6 +5319,7 @@ function IntakePage({
               <div className="line-item">
                 <strong>Activities (inline edit)</strong>
                 <div className="activity-filter-tools">
+                  <span className="filter-label">Tag</span>
                   <select
                     value={reviewTagFilter}
                     onChange={(e) => setReviewTagFilter(e.target.value as 'ALL' | ActivityTag)}
