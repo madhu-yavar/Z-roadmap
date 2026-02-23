@@ -327,6 +327,13 @@ ACTIVITY_PRO_TEMPLATES: list[tuple[str, str]] = [
     (r"\bcore\s+edge\s+schema\b", "Define workflow edge schema contract"),
     (r"\binvalid\s+json\b", "Handle invalid parser JSON with clear error responses"),
     (r"\bjson\s+extraction.*workflow\s*parser\b", "Implement JSON extraction and workflow parser validation"),
+    (r"\bsystem\s+enforces.*approval\s+nodes\b", "Validate approval node governance rules"),
+    (r"\bfor\s+approval\s+nodes\b", "Validate workflow approval node rules"),
+    (r"\bthrough\s+the\s+parser\b", "Validate workflow parser rules"),
+    (
+        r"\bfinalize\s+the\s+workflow\s+to\s+make\s+it\s+immutable\b",
+        "Implement workflow finalization and immutability controls",
+    ),
     (r"\bdangling\s+nodes\b", "Validate and resolve dangling workflow nodes"),
     (r"\binvalid\s+edge\s+references?\b", "Validate workflow edge references before persistence"),
     (r"\bdecision\s+branches\b", "Validate completeness of workflow decision branches"),
@@ -452,6 +459,8 @@ def _activity_quality_score(activity: str) -> int:
 
     if _activity_verb(plain) in BASE_ACTIVITY_VERBS or _activity_verb(plain) in ACTION_LINE_VERBS:
         score += 25
+    if len(low_words) >= 2 and _activity_verb(plain) in BASE_ACTIVITY_VERBS and low_words[1] in {"for", "through", "the", "a", "an"}:
+        score -= 35
 
     wc = len(words)
     if 4 <= wc <= 12:
@@ -477,6 +486,8 @@ def _activity_quality_score(activity: str) -> int:
 
     if any(x in plain.lower() for x in ("pre-existing", "conforming to", "etc", "and/or")):
         score -= 10
+    if any(x in plain.lower() for x in ("system enforces", "to make it", "through the parser")):
+        score -= 25
     if any(w in plain.lower().split() for w in NOISY_ACTIVITY_WORDS):
         score -= 10
     if _contains_activity_noise(plain):
@@ -653,34 +664,47 @@ def _doc_complexity_profile(units: list[dict], file_name: str, file_type: str) -
 
     if score >= 4:
         level = "high"
-        commitment_target = 16
+        commitment_ratio = 0.30
         commitment_min = 10
-        commitment_max = 20
-        implementation_target = 32
-        implementation_max = 40
+        commitment_max = 32
+        implementation_ratio = 0.60
+        implementation_max = 80
         understanding_outcomes_max = 12
         prompt_units_understanding = 420
         prompt_units_candidate = 420
     elif score >= 2:
         level = "medium"
-        commitment_target = 12
+        commitment_ratio = 0.35
         commitment_min = 8
-        commitment_max = 16
-        implementation_target = 24
-        implementation_max = 30
+        commitment_max = 24
+        implementation_ratio = 0.70
+        implementation_max = 60
         understanding_outcomes_max = 10
         prompt_units_understanding = 340
         prompt_units_candidate = 340
     else:
         level = "low"
-        commitment_target = 8
+        commitment_ratio = 0.45
         commitment_min = 5
-        commitment_max = 12
-        implementation_target = 16
-        implementation_max = 20
+        commitment_max = 16
+        implementation_ratio = 0.85
+        implementation_max = 40
         understanding_outcomes_max = 8
         prompt_units_understanding = 260
         prompt_units_candidate = 260
+
+    estimated_unique = max(
+        commitment_min,
+        min(
+            implementation_max,
+            int(activity_signal_count * 0.22) + max(0, heading_count // 8),
+        ),
+    )
+    commitment_target = max(commitment_min, min(commitment_max, int(round(estimated_unique * commitment_ratio))))
+    implementation_target = max(
+        commitment_target,
+        min(implementation_max, int(round(estimated_unique * implementation_ratio))),
+    )
 
     lane_minimums = {
         "FE": 4 if fe_signal_count >= 8 and level == "high" else 2,
@@ -702,6 +726,9 @@ def _doc_complexity_profile(units: list[dict], file_name: str, file_type: str) -
         "commitment_max": commitment_max,
         "implementation_target": implementation_target,
         "implementation_max": implementation_max,
+        "commitment_ratio": commitment_ratio,
+        "implementation_ratio": implementation_ratio,
+        "estimated_unique_activities": estimated_unique,
         "understanding_outcomes_max": understanding_outcomes_max,
         "prompt_units_understanding": prompt_units_understanding,
         "prompt_units_candidate": prompt_units_candidate,
@@ -967,28 +994,43 @@ def _merge_activity_sets(
         hard_max=int(profile.get("implementation_max", 30)),
     )
 
-    commitment_target = int(profile.get("commitment_target", 12))
+    qualified_activities = [a for a in merged if _activity_quality_score(a) >= ACTIVITY_REWRITE_THRESHOLD]
+    if len(qualified_activities) < max(3, int(profile.get("commitment_min", 6))):
+        qualified_activities = list(merged)
+    extracted_unique_count = len(qualified_activities)
+    commitment_ratio = float(profile.get("commitment_ratio", 0.50))
+    implementation_ratio = float(profile.get("implementation_ratio", 0.90))
+    commitment_target = int(round(extracted_unique_count * commitment_ratio))
     commitment_min = int(profile.get("commitment_min", 6))
     commitment_max = int(profile.get("commitment_max", 16))
-    implementation_target = int(profile.get("implementation_target", 24))
+    implementation_target = int(round(extracted_unique_count * implementation_ratio))
     implementation_max = int(profile.get("implementation_max", 30))
 
+    if extracted_unique_count == 0:
+        return [], []
+
     commitment_count = min(commitment_max, max(commitment_min, commitment_target))
+    commitment_count = min(commitment_count, extracted_unique_count)
+    if commitment_count <= 0:
+        commitment_count = min(extracted_unique_count, commitment_min)
     commitment = _promote_best_activities(
-        primary=merged,
+        primary=qualified_activities + merged,
         pool=deterministic_activities,
         target=commitment_count,
     )
-    if len(commitment) < commitment_min:
+    if len(commitment) < min(commitment_min, extracted_unique_count):
         commitment = _promote_best_activities(
             primary=commitment + merged,
             pool=deterministic_activities,
-            target=max(commitment_min, len(commitment)),
+            target=max(min(commitment_min, extracted_unique_count), len(commitment)),
         )
 
     implementation_count = min(implementation_max, max(len(commitment), implementation_target))
+    implementation_count = min(implementation_count, extracted_unique_count)
+    if implementation_count < len(commitment):
+        implementation_count = len(commitment)
     implementation = _promote_best_activities(
-        primary=merged,
+        primary=qualified_activities + merged,
         pool=deterministic_activities,
         target=implementation_count,
     )
@@ -1771,13 +1813,14 @@ def _candidate_graph_refine_node(state: CandidateGraphState) -> CandidateGraphSt
     else:
         candidate = fallback_candidate
 
+    candidate_pool_limit = max(90, int(profile.get("implementation_max", 30)) * 2)
     structured_activities = _extract_structured_activity_candidates(
         units=units,
-        max_items=max(40, int(profile.get("implementation_max", 30))),
+        max_items=candidate_pool_limit,
     )
     deterministic_activities = _deterministic_activity_candidates(
         units=units,
-        max_items=max(40, int(profile.get("implementation_max", 30))),
+        max_items=candidate_pool_limit,
     )
     merged_deterministic = structured_activities + [a for a in deterministic_activities if a not in structured_activities]
     seed_activities = candidate.get("activities") or []
@@ -2389,6 +2432,10 @@ def generate_roadmap_candidate_from_document(
             "activity_signal_count": profile.get("activity_signal_count"),
             "commitment_target": profile.get("commitment_target"),
             "implementation_target": profile.get("implementation_target"),
+            "commitment_ratio": profile.get("commitment_ratio"),
+            "implementation_ratio": profile.get("implementation_ratio"),
+            "commitment_count_actual": len(commitment_activities),
+            "implementation_count_actual": len(implementation_activities),
         },
         "rewrite_summary": rewrite_summary,
     }

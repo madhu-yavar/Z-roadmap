@@ -2804,6 +2804,7 @@ function App() {
               selectedRoadmapItem={selectedRoadmapItem}
               startRoadmapEdit={startRoadmapEdit}
               roadmapTitle={roadmapTitle}
+              setRoadmapTitle={setRoadmapTitle}
               roadmapScope={roadmapScope}
               setRoadmapScope={setRoadmapScope}
               roadmapActivities={roadmapActivities}
@@ -5963,6 +5964,7 @@ type RoadmapProps = {
   selectedRoadmapItem: RoadmapItem | null
   startRoadmapEdit: (item: RoadmapItem) => Promise<void>
   roadmapTitle: string
+  setRoadmapTitle: Dispatch<SetStateAction<string>>
   roadmapScope: string
   setRoadmapScope: Dispatch<SetStateAction<string>>
   roadmapActivities: string[]
@@ -6034,6 +6036,7 @@ function RoadmapPage({
   selectedRoadmapItem,
   startRoadmapEdit,
   roadmapTitle,
+  setRoadmapTitle,
   roadmapScope,
   setRoadmapScope,
   roadmapActivities,
@@ -6455,6 +6458,15 @@ function RoadmapPage({
                     </button>
                   )}
                 </div>
+                <label>
+                  Title
+                  <input
+                    value={roadmapTitle}
+                    disabled={isLocked || busy}
+                    onChange={(e) => setRoadmapTitle(e.target.value)}
+                    placeholder="Refine commitment title"
+                  />
+                </label>
                 <label>
                   Scope
                   <textarea
