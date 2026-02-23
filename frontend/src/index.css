@@ -2615,6 +2615,13 @@ button.activity-tag-chip:hover {
   flex-wrap: wrap;
 }
 
+.classification-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 6px 0 10px;
+}
+
 .evidence-block {
   border: 1px solid var(--line);
   border-radius: 8px;

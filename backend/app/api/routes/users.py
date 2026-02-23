@@ -73,11 +73,12 @@ def _system_role_policies() -> list[RolePolicyOut]:
             role_kind="system",
             base_role=UserRole.VP,
             can_allocate_portfolio_quotas=True,
+            can_submit_commitment=True,
             can_manage_settings=True,
             scope="Portfolio capacity and delivery balancing",
             responsibilities=[
                 "Allocate portfolio quotas (client/internal)",
-                "Review commitment feasibility against capacity",
+                "Review and confirm commitment feasibility against capacity",
                 "Escalate conflicts and sequence portfolio plans",
             ],
         ),

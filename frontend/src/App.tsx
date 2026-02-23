@@ -2809,7 +2809,12 @@ function App() {
               setRoadmapScope={setRoadmapScope}
               roadmapActivities={roadmapActivities}
               setRoadmapActivities={setRoadmapActivities}
+              roadmapProjectContext={roadmapProjectContext}
+              setRoadmapProjectContext={setRoadmapProjectContext}
+              roadmapInitiativeType={roadmapInitiativeType}
+              setRoadmapInitiativeType={setRoadmapInitiativeType}
               roadmapDeliveryMode={roadmapDeliveryMode}
+              setRoadmapDeliveryMode={setRoadmapDeliveryMode}
               roadmapRndHypothesis={roadmapRndHypothesis}
               roadmapRndExperimentGoal={roadmapRndExperimentGoal}
               roadmapRndSuccessCriteria={roadmapRndSuccessCriteria}
@@ -3518,6 +3523,15 @@ function RndLabPage({
             <h2>R&D Lab</h2>
             <span className="muted">VP-owned intake for AI/R&D experiments and MVP conversion flow.</span>
           </div>
+          <details className="flat-detail" open>
+            <summary>R&D pipeline (source of truth)</summary>
+            <ol className="understanding-list">
+              <li>VP creates R&D intake from uploaded document (Start R&D Intake) or Manual R&D Intake.</li>
+              <li>Intake is reviewed and approved; system creates/updates commitment candidate with <code>delivery_mode = rnd</code>.</li>
+              <li>In Commitment Shaping, VP/CEO refines scope, activities, and FTE, then confirms roadmap commitment.</li>
+              <li>After commit, item moves to roadmap plan and appears in R&D Roadmap metrics and dashboard charts.</li>
+            </ol>
+          </details>
           <div className="stats-grid">
             <div className="stat-item">
               <p>R&D Intake</p>
@@ -5969,7 +5983,12 @@ type RoadmapProps = {
   setRoadmapScope: Dispatch<SetStateAction<string>>
   roadmapActivities: string[]
   setRoadmapActivities: Dispatch<SetStateAction<string[]>>
+  roadmapProjectContext: string
+  setRoadmapProjectContext: Dispatch<SetStateAction<string>>
+  roadmapInitiativeType: string
+  setRoadmapInitiativeType: Dispatch<SetStateAction<string>>
   roadmapDeliveryMode: string
+  setRoadmapDeliveryMode: Dispatch<SetStateAction<string>>
   roadmapRndHypothesis: string
   roadmapRndExperimentGoal: string
   roadmapRndSuccessCriteria: string
@@ -6041,7 +6060,12 @@ function RoadmapPage({
   setRoadmapScope,
   roadmapActivities,
   setRoadmapActivities,
+  roadmapProjectContext,
+  setRoadmapProjectContext,
+  roadmapInitiativeType,
+  setRoadmapInitiativeType,
   roadmapDeliveryMode,
+  setRoadmapDeliveryMode,
   roadmapRndHypothesis,
   roadmapRndExperimentGoal,
   roadmapRndSuccessCriteria,
@@ -6105,6 +6129,11 @@ function RoadmapPage({
   const hasResourceFte =
     (Number(roadmapFeFte) || 0) + (Number(roadmapBeFte) || 0) + (Number(roadmapAiFte) || 0) + (Number(roadmapPmFte) || 0) > 0
   const capacityApproved = !capacityValidation || capacityValidation.status === 'APPROVED'
+  const commitBlockers: string[] = []
+  if (!canCommit) commitBlockers.push('Set Readiness to "Ready to commit".')
+  if (!hasDuration) commitBlockers.push('Set tentative duration (weeks).')
+  if (!hasResourceFte) commitBlockers.push('Set FE/BE/AI/PM FTE values.')
+  if (!capacityApproved) commitBlockers.push(capacityValidation?.reason || 'Capacity is overallocated for one or more roles.')
   const knownOwners = useMemo(() => {
     const owners = roadmapItems.map((item) => item.accountable_person.trim()).filter(Boolean)
     return Array.from(new Set(owners))
@@ -6304,7 +6333,7 @@ function RoadmapPage({
                   </div>
                 </div>
                 <p className="inbox-meta">
-                  {`${formatPriority(item.priority)} • ${item.delivery_mode === 'rnd' ? 'R&D' : formatInitiative(item.initiative_type)} • ${item.activities.length} activities`}
+                  {`${formatPriority(item.priority)} • ${item.project_context === 'client' ? 'Client' : 'Internal'} • ${item.delivery_mode === 'rnd' ? 'R&D' : 'Standard'} • ${formatInitiative(item.initiative_type)} • ${item.activities.length} activities`}
                 </p>
                 {dup?.is_redundant && dup.best_match_title && (
                   <p className="inbox-dup">
@@ -6404,6 +6433,11 @@ function RoadmapPage({
               </ul>
             </details>
             <p className="source-line">Source document: {selectedRoadmapItem.source_document_id ? docMap.get(selectedRoadmapItem.source_document_id) || '-' : '-'}</p>
+            <div className="classification-row">
+              <span className="activity-tag-chip tag-be active">{roadmapProjectContext === 'client' ? 'Client Project' : 'Internal Project'}</span>
+              <span className="activity-tag-chip tag-ai active">{roadmapDeliveryMode === 'rnd' ? 'R&D' : 'Standard Delivery'}</span>
+              <span className="activity-tag-chip tag-fe active">{formatInitiative(roadmapInitiativeType)}</span>
+            </div>
             {roadmapDeliveryMode === 'rnd' && (
               <details className="flat-detail">
                 <summary>View R&D framing</summary>
@@ -6477,6 +6511,41 @@ function RoadmapPage({
                     placeholder="Refine commitment scope"
                   />
                 </label>
+                <div className="split-3">
+                  <label>
+                    Project Type
+                    <select
+                      value={roadmapProjectContext}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapProjectContext(e.target.value)}
+                    >
+                      <option value="client">Client Project</option>
+                      <option value="internal">Internal Project</option>
+                    </select>
+                  </label>
+                  <label>
+                    Delivery Mode
+                    <select
+                      value={roadmapDeliveryMode}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapDeliveryMode(e.target.value)}
+                    >
+                      <option value="standard">Standard</option>
+                      <option value="rnd">R&amp;D</option>
+                    </select>
+                  </label>
+                  <label>
+                    Initiative
+                    <select
+                      value={roadmapInitiativeType}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapInitiativeType(e.target.value)}
+                    >
+                      <option value="new_feature">New Feature</option>
+                      <option value="new_product">New Product</option>
+                    </select>
+                  </label>
+                </div>
                 <div className="split-4">
                   <label>
                     FE FTE
@@ -6731,11 +6800,11 @@ function RoadmapPage({
               </datalist>
             </div>
 
-            {!isLocked && canCommit && (
+            {!isLocked && (
               <button
                 className="primary-btn commit-cta"
                 type="button"
-                disabled={busy || !hasDuration || !hasResourceFte || !capacityApproved}
+                disabled={busy || commitBlockers.length > 0}
                 onClick={async () => {
                   const ok = window.confirm(
                     'Confirm Roadmap Commitment?\n\nThis is a public commitment and will become visible on the roadmap.',
@@ -6747,15 +6816,11 @@ function RoadmapPage({
                 Confirm Roadmap Commitment
               </button>
             )}
-            {!isLocked && canCommit && !hasDuration && (
-              <p className="muted">Set tentative duration (weeks) to enable commitment confirmation.</p>
-            )}
-            {!isLocked && canCommit && hasDuration && !hasResourceFte && (
-              <p className="muted">Set FE/BE/AI/PM FTE to enable commitment confirmation.</p>
-            )}
-            {!isLocked && canCommit && hasDuration && !capacityApproved && (
-              <p className="error-text">Capacity is overallocated. Reduce FTE or duration before committing.</p>
-            )}
+            {!isLocked && commitBlockers.map((reason) => (
+              <p key={reason} className={reason.toLowerCase().includes('capacity') ? 'error-text' : 'muted'}>
+                {reason}
+              </p>
+            ))}
 
             <p className="muted footer-note">
               {selectedPlan
