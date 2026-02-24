@@ -1371,12 +1371,13 @@ function App() {
     }
   }
 
-  async function bulkDeleteDocuments() {
-    if (!token || !selectedDocumentIds.length) return
+  async function bulkDeleteDocuments(idsOverride?: number[]) {
+    const ids = idsOverride && idsOverride.length ? idsOverride : selectedDocumentIds
+    if (!token || !ids.length) return
     setBusy(true)
     setError('')
     try {
-      await api('/documents/bulk-delete', { method: 'POST', body: JSON.stringify({ ids: selectedDocumentIds }) }, token)
+      await api('/documents/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }, token)
       setSelectedDocumentIds([])
       await loadData(token)
     } catch (err) {
@@ -2981,6 +2982,8 @@ function App() {
               promoteRndIntakeToCommitment={promoteRndIntakeToCommitment}
               promoteRndCommitmentToRoadmap={promoteRndCommitmentToRoadmap}
               unlockRoadmapCommitment={unlockRoadmapCommitment}
+              bulkDeleteRoadmap={bulkDeleteRoadmap}
+              bulkDeleteDocuments={bulkDeleteDocuments}
               busy={busy}
             />
           }
@@ -3546,6 +3549,8 @@ type RndLabProps = {
   promoteRndIntakeToCommitment: (item: IntakeItem) => Promise<void>
   promoteRndCommitmentToRoadmap: (item: RoadmapItem) => Promise<void>
   unlockRoadmapCommitment: (itemId: number) => Promise<void>
+  bulkDeleteRoadmap: (idsOverride?: number[]) => Promise<void>
+  bulkDeleteDocuments: (idsOverride?: number[]) => Promise<void>
   busy: boolean
 }
 
@@ -3561,6 +3566,8 @@ function RndLabPage({
   promoteRndIntakeToCommitment,
   promoteRndCommitmentToRoadmap,
   unlockRoadmapCommitment,
+  bulkDeleteRoadmap,
+  bulkDeleteDocuments,
   busy,
 }: RndLabProps) {
   const navigate = useNavigate()
@@ -3593,6 +3600,11 @@ function RndLabPage({
     () => roadmapPlanItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
     [roadmapPlanItems],
   )
+  const roadmapItemById = useMemo(() => {
+    const map = new Map<number, RoadmapItem>()
+    for (const row of roadmapItems) map.set(row.id, row)
+    return map
+  }, [roadmapItems])
   const rndRoadmapBucketIds = useMemo(() => new Set(rndRoadmap.map((item) => item.bucket_item_id)), [rndRoadmap])
   const rndCommitments = useMemo(
     () =>
@@ -3723,28 +3735,42 @@ function RndLabPage({
                       <td>{doc.file_name}</td>
                       <td>{(doc.file_type || '').toUpperCase()}</td>
                       <td>
-                        <button
-                          className="ghost-btn tiny"
-                          type="button"
-                          disabled={busy || !isVP}
-                          onClick={() =>
-                            analyzeDocument(doc.id, {
-                              priority: 'medium',
-                              project_context: 'internal',
-                              initiative_type: 'new_feature',
-                              delivery_mode: 'rnd',
-                              rnd_hypothesis: '',
-                              rnd_experiment_goal: '',
-                              rnd_success_criteria: '',
-                              rnd_timebox_weeks: null,
-                              rnd_decision_date: '',
-                              rnd_next_gate: '',
-                              rnd_risk_level: '',
-                            })
-                          }
-                        >
-                          Start R&D Intake
-                        </button>
+                        <div className="activity-chip-row">
+                          <button
+                            className="ghost-btn tiny"
+                            type="button"
+                            disabled={busy || !isVP}
+                            onClick={() =>
+                              analyzeDocument(doc.id, {
+                                priority: 'medium',
+                                project_context: 'internal',
+                                initiative_type: 'new_feature',
+                                delivery_mode: 'rnd',
+                                rnd_hypothesis: '',
+                                rnd_experiment_goal: '',
+                                rnd_success_criteria: '',
+                                rnd_timebox_weeks: null,
+                                rnd_decision_date: '',
+                                rnd_next_gate: '',
+                                rnd_risk_level: '',
+                              })
+                            }
+                          >
+                            Start R&D Intake
+                          </button>
+                          <button
+                            className="ghost-btn tiny"
+                            type="button"
+                            disabled={busy}
+                            onClick={async () => {
+                              const ok = window.confirm(`Delete uploaded document "${doc.file_name}"?`)
+                              if (!ok) return
+                              await bulkDeleteDocuments([doc.id])
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -3816,14 +3842,28 @@ function RndLabPage({
                         <td>{item.rnd_next_gate || '-'}</td>
                         <td>{item.rnd_risk_level || '-'}</td>
                         <td>
-                          <button
-                            className="ghost-btn tiny"
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void promoteRndIntakeToCommitment(item)}
-                          >
-                            Move to Commitment
-                          </button>
+                          <div className="activity-chip-row">
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void promoteRndIntakeToCommitment(item)}
+                            >
+                              Move to Commitment
+                            </button>
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={busy}
+                              onClick={async () => {
+                                const ok = window.confirm(`Delete R&D intake "${item.title}"?`)
+                                if (!ok) return
+                                await bulkDeleteDocuments([item.document_id])
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -3869,6 +3909,18 @@ function RndLabPage({
                             </button>
                             <button className="ghost-btn tiny" type="button" disabled={busy} onClick={() => navigate('/roadmap')}>
                               Open Commitment
+                            </button>
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={busy}
+                              onClick={async () => {
+                                const ok = window.confirm(`Delete R&D commitment "${item.title}"?`)
+                                if (!ok) return
+                                await bulkDeleteRoadmap([item.id])
+                              }}
+                            >
+                              Delete
                             </button>
                           </div>
                         </td>
@@ -3916,6 +3968,26 @@ function RndLabPage({
                             </button>
                             <button className="ghost-btn tiny" type="button" disabled={busy} onClick={() => navigate('/roadmap-agent')}>
                               Open Roadmap
+                            </button>
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={
+                                busy ||
+                                !isCEO ||
+                                !(roadmapItemById.get(item.bucket_item_id)?.source_document_id)
+                              }
+                              onClick={async () => {
+                                const bucket = roadmapItemById.get(item.bucket_item_id)
+                                if (!bucket?.source_document_id) return
+                                const ok = window.confirm(
+                                  `Delete roadmap item "${item.title}" and linked source document? This cannot be undone.`,
+                                )
+                                if (!ok) return
+                                await bulkDeleteDocuments([bucket.source_document_id])
+                              }}
+                            >
+                              Delete
                             </button>
                           </div>
                         </td>
