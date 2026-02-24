@@ -735,15 +735,6 @@ function hasAiTagInActivities(items: string[]): boolean {
   return (items || []).some((entry) => parseActivityEntry(entry).tags.includes('AI'))
 }
 
-function rndOutcomeLabel(nextGate: string): string {
-  const val = (nextGate || '').trim().toLowerCase()
-  if (val === 'productize') return 'MVP Candidate'
-  if (val === 'stop') return 'Research Only'
-  if (val === 'pivot') return 'Research Pivot'
-  if (val === 'continue') return 'R&D In Progress'
-  return 'Gate Pending'
-}
-
 function ensureTaggedActivity(value: string): string {
   const parsed = parseActivityEntry(value)
   const text = (parsed.text || value || '').trim()
@@ -1584,6 +1575,95 @@ function App() {
       await loadIntakeHistory(item.id)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Manual intake creation failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function promoteRndIntakeToCommitment(item: IntakeItem) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      const updated = await api<IntakeItem>(
+        `/intake/items/${item.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            title: item.title,
+            scope: item.scope,
+            activities: item.activities,
+            status: 'approved',
+            expected_version_no: item.version_no,
+          }),
+        },
+        token,
+      )
+      await loadData(token)
+      if (updated.roadmap_item_id) setSelectedRoadmapId(updated.roadmap_item_id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Move to commitment failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function promoteRndCommitmentToRoadmap(item: RoadmapItem) {
+    if (!token) return
+    setBusy(true)
+    setError('')
+    try {
+      const duration = item.rnd_timebox_weeks && item.rnd_timebox_weeks > 0 ? item.rnd_timebox_weeks : 4
+      const totalFte = (item.fe_fte || 0) + (item.be_fte || 0) + (item.ai_fte || 0) + (item.pm_fte || 0)
+      if (totalFte <= 0) {
+        throw new Error(`Cannot move "${item.title}" to roadmap. Set FE/BE/AI/PM FTE in Commitment Shaping first.`)
+      }
+      await api<RoadmapItem>(
+        `/roadmap/items/${item.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            title: item.title,
+            scope: item.scope,
+            activities: item.activities,
+            priority: item.priority,
+            project_context: item.project_context,
+            initiative_type: item.initiative_type,
+            delivery_mode: item.delivery_mode,
+            rnd_hypothesis: item.rnd_hypothesis,
+            rnd_experiment_goal: item.rnd_experiment_goal,
+            rnd_success_criteria: item.rnd_success_criteria,
+            rnd_timebox_weeks: item.rnd_timebox_weeks,
+            rnd_decision_date: item.rnd_decision_date,
+            rnd_next_gate: item.rnd_next_gate,
+            rnd_risk_level: item.rnd_risk_level,
+            fe_fte: item.fe_fte,
+            be_fte: item.be_fte,
+            ai_fte: item.ai_fte,
+            pm_fte: item.pm_fte,
+            accountable_person: item.accountable_person || '',
+            picked_up: true,
+            expected_version_no: item.version_no,
+          }),
+        },
+        token,
+      )
+      await api<{ moved: number }>(
+        '/roadmap/plan/move',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            ids: [item.id],
+            tentative_duration_weeks: duration,
+            pickup_period: 'R&D',
+            completion_period: item.rnd_next_gate ? `Gate: ${item.rnd_next_gate}` : '',
+          }),
+        },
+        token,
+      )
+      await loadData(token)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Move to roadmap failed')
     } finally {
       setBusy(false)
     }
@@ -2898,6 +2978,9 @@ function App() {
               roadmapPlanItems={roadmapPlanItems}
               analyzeDocument={analyzeDocument}
               createManualIntake={createManualIntake}
+              promoteRndIntakeToCommitment={promoteRndIntakeToCommitment}
+              promoteRndCommitmentToRoadmap={promoteRndCommitmentToRoadmap}
+              unlockRoadmapCommitment={unlockRoadmapCommitment}
               busy={busy}
             />
           }
@@ -3460,6 +3543,9 @@ type RndLabProps = {
   roadmapPlanItems: RoadmapPlanItem[]
   analyzeDocument: (documentId: number, seed?: IntakeSeedMeta) => Promise<void>
   createManualIntake: (payload: ManualIntakeIn) => Promise<void>
+  promoteRndIntakeToCommitment: (item: IntakeItem) => Promise<void>
+  promoteRndCommitmentToRoadmap: (item: RoadmapItem) => Promise<void>
+  unlockRoadmapCommitment: (itemId: number) => Promise<void>
   busy: boolean
 }
 
@@ -3472,11 +3558,16 @@ function RndLabPage({
   roadmapPlanItems,
   analyzeDocument,
   createManualIntake,
+  promoteRndIntakeToCommitment,
+  promoteRndCommitmentToRoadmap,
+  unlockRoadmapCommitment,
   busy,
 }: RndLabProps) {
+  const navigate = useNavigate()
   const isVP = currentUserRole === 'VP'
   const isCEO = currentUserRole === 'CEO'
   const [manualOpen, setManualOpen] = useState(false)
+  const [stageView, setStageView] = useState<'intake' | 'commitment' | 'roadmap'>('intake')
   const [manualForm, setManualForm] = useState<ManualIntakeIn>({
     title: '',
     scope: '',
@@ -3498,13 +3589,17 @@ function RndLabPage({
     () => intakeItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
     [intakeItems],
   )
-  const rndCommitments = useMemo(
-    () => roadmapItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
-    [roadmapItems],
-  )
   const rndRoadmap = useMemo(
     () => roadmapPlanItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
     [roadmapPlanItems],
+  )
+  const rndRoadmapBucketIds = useMemo(() => new Set(rndRoadmap.map((item) => item.bucket_item_id)), [rndRoadmap])
+  const rndCommitments = useMemo(
+    () =>
+      roadmapItems.filter(
+        (item) => (item.delivery_mode || '').toLowerCase() === 'rnd' && !rndRoadmapBucketIds.has(item.id),
+      ),
+    [roadmapItems, rndRoadmapBucketIds],
   )
   const aiInRnd = useMemo(
     () => ({
@@ -3518,6 +3613,23 @@ function RndLabPage({
     () => documents.filter((doc) => !intakeByDocument.has(doc.id)),
     [documents, intakeByDocument],
   )
+
+  useEffect(() => {
+    if (stageView === 'intake' && rndIntake.length > 0) return
+    if (stageView === 'commitment' && rndCommitments.length > 0) return
+    if (stageView === 'roadmap' && rndRoadmap.length > 0) return
+    if (rndIntake.length > 0) {
+      setStageView('intake')
+      return
+    }
+    if (rndCommitments.length > 0) {
+      setStageView('commitment')
+      return
+    }
+    if (rndRoadmap.length > 0) {
+      setStageView('roadmap')
+    }
+  }, [rndIntake.length, rndCommitments.length, rndRoadmap.length, stageView])
 
   if (!isVP && !isCEO) {
     return (
@@ -3570,187 +3682,248 @@ function RndLabPage({
             <span className="muted">AI-loaded R&D Commitments: {aiInRnd.commitments}</span>
             <span className="muted">AI-loaded R&D Roadmap: {aiInRnd.roadmap}</span>
           </div>
+          <p className="muted">Single-state model: one project appears in only one stage at a time (Intake or Commitment or Roadmap).</p>
         </section>
 
         <section className="panel-card">
           <div className="line-item">
-            <h3>R&D Intake Entry (VP Only)</h3>
+            <h3>Create R&D Intake</h3>
             {isVP && (
               <button className="ghost-btn tiny" type="button" onClick={() => setManualOpen(true)}>
                 Manual R&D Intake
               </button>
             )}
           </div>
-          {!isVP && (
-            <p className="muted">
-              {isCEO
-                ? 'CEO can review R&D pipeline here. VP role is required to create R&D intake.'
-                : 'R&D intake creation is restricted to VP role.'}
-            </p>
-          )}
-          <div className="intake-table-wrap">
-            <table className="docs-table">
-              <thead>
-                <tr>
-                  <th>Document</th>
-                  <th>Type</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {unassignedDocs.length === 0 && (
+          <p className="muted">
+            {isVP
+              ? 'Use uploaded documents to start R&D intake or create manual intake.'
+              : 'CEO can review and transition stages. VP role is required to create new R&D intake.'}
+          </p>
+          <details className="flat-detail">
+            <summary>Start from uploaded documents ({unassignedDocs.length})</summary>
+            <div className="intake-table-wrap">
+              <table className="docs-table">
+                <thead>
                   <tr>
-                    <td colSpan={3} className="muted">
-                      No unassigned uploaded documents available.
-                    </td>
+                    <th>Document</th>
+                    <th>Type</th>
+                    <th>Action</th>
                   </tr>
-                )}
-                {unassignedDocs.map((doc) => (
-                  <tr key={doc.id}>
-                    <td>{doc.file_name}</td>
-                    <td>{(doc.file_type || '').toUpperCase()}</td>
-                    <td>
-                      <button
-                        className="ghost-btn tiny"
-                        type="button"
-                        disabled={busy || !isVP}
-                        onClick={() =>
-                          analyzeDocument(doc.id, {
-                            priority: 'medium',
-                            project_context: 'internal',
-                            initiative_type: 'new_feature',
-                            delivery_mode: 'rnd',
-                            rnd_hypothesis: '',
-                            rnd_experiment_goal: '',
-                            rnd_success_criteria: '',
-                            rnd_timebox_weeks: null,
-                            rnd_decision_date: '',
-                            rnd_next_gate: '',
-                            rnd_risk_level: '',
-                          })
-                        }
-                      >
-                        Start R&D Intake
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {unassignedDocs.length === 0 && (
+                    <tr>
+                      <td colSpan={3} className="muted">
+                        No unassigned uploaded documents available.
+                      </td>
+                    </tr>
+                  )}
+                  {unassignedDocs.map((doc) => (
+                    <tr key={doc.id}>
+                      <td>{doc.file_name}</td>
+                      <td>{(doc.file_type || '').toUpperCase()}</td>
+                      <td>
+                        <button
+                          className="ghost-btn tiny"
+                          type="button"
+                          disabled={busy || !isVP}
+                          onClick={() =>
+                            analyzeDocument(doc.id, {
+                              priority: 'medium',
+                              project_context: 'internal',
+                              initiative_type: 'new_feature',
+                              delivery_mode: 'rnd',
+                              rnd_hypothesis: '',
+                              rnd_experiment_goal: '',
+                              rnd_success_criteria: '',
+                              rnd_timebox_weeks: null,
+                              rnd_decision_date: '',
+                              rnd_next_gate: '',
+                              rnd_risk_level: '',
+                            })
+                          }
+                        >
+                          Start R&D Intake
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </section>
 
         <section className="panel-card">
-          <h3>R&D Intake Queue</h3>
-          <div className="intake-table-wrap">
-            <table className="docs-table">
-              <thead>
-                <tr>
-                  <th>Intake ID</th>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th>Context</th>
-                  <th>Next Gate</th>
-                  <th>Outcome</th>
-                  <th>Risk</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rndIntake.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="muted">
-                      No R&D intake items yet.
-                    </td>
-                  </tr>
-                )}
-                {rndIntake.map((item) => (
-                  <tr key={`rnd-intake-${item.id}`}>
-                    <td>{item.id}</td>
-                    <td>{item.title || '-'}</td>
-                    <td>{item.status || '-'}</td>
-                    <td>{item.project_context || '-'}</td>
-                    <td>{item.rnd_next_gate || '-'}</td>
-                    <td>{rndOutcomeLabel(item.rnd_next_gate)}</td>
-                    <td>{item.rnd_risk_level || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="line-item">
+            <h3>R&D Stage Workspace</h3>
+            <div className="activity-chip-row">
+              <button
+                className={`ghost-btn tiny${stageView === 'intake' ? ' active-pill' : ''}`}
+                type="button"
+                onClick={() => setStageView('intake')}
+              >
+                Intake ({rndIntake.length})
+              </button>
+              <button
+                className={`ghost-btn tiny${stageView === 'commitment' ? ' active-pill' : ''}`}
+                type="button"
+                onClick={() => setStageView('commitment')}
+              >
+                Commitment ({rndCommitments.length})
+              </button>
+              <button
+                className={`ghost-btn tiny${stageView === 'roadmap' ? ' active-pill' : ''}`}
+                type="button"
+                onClick={() => setStageView('roadmap')}
+              >
+                Roadmap ({rndRoadmap.length})
+              </button>
+            </div>
           </div>
-        </section>
-
-        <section className="panel-card">
-          <h3>R&D Commitments</h3>
+          <p className="muted">
+            {stageView === 'intake' && 'Intake to Commitment transition: validates and creates commitment candidate.'}
+            {stageView === 'commitment' && 'Commitment to Roadmap transition: requires FTE and timebox; capacity checks are enforced.'}
+            {stageView === 'roadmap' && 'Roadmap to Commitment transition: unlock item to move it back for reshaping.'}
+          </p>
           <div className="intake-table-wrap">
             <table className="docs-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Title</th>
-                  <th>Priority</th>
-                  <th>AI FTE</th>
-                  <th>Next Gate</th>
-                  <th>Outcome</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rndCommitments.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="muted">
-                      No R&D commitments yet.
-                    </td>
-                  </tr>
-                )}
-                {rndCommitments.map((item) => (
-                  <tr key={`rnd-commit-${item.id}`}>
-                    <td>{item.id}</td>
-                    <td>{item.title || '-'}</td>
-                    <td>{item.priority || '-'}</td>
-                    <td>{(item.ai_fte || 0).toFixed(1)}</td>
-                    <td>{item.rnd_next_gate || '-'}</td>
-                    <td>{rndOutcomeLabel(item.rnd_next_gate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="panel-card">
-          <h3>R&D Roadmap</h3>
-          <div className="intake-table-wrap">
-            <table className="docs-table">
-              <thead>
-                <tr>
-                  <th>Plan ID</th>
-                  <th>Title</th>
-                  <th>Status</th>
-                  <th>Start</th>
-                  <th>End</th>
-                  <th>AI FTE</th>
-                  <th>Outcome</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rndRoadmap.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="muted">
-                      No R&D roadmap entries yet.
-                    </td>
-                  </tr>
-                )}
-                {rndRoadmap.map((item) => (
-                  <tr key={`rnd-roadmap-${item.id}`}>
-                    <td>{item.id}</td>
-                    <td>{item.title || '-'}</td>
-                    <td>{item.planning_status || '-'}</td>
-                    <td>{item.planned_start_date || '-'}</td>
-                    <td>{item.planned_end_date || '-'}</td>
-                    <td>{(item.ai_fte || 0).toFixed(1)}</td>
-                    <td>{rndOutcomeLabel(item.rnd_next_gate)}</td>
-                  </tr>
-                ))}
-              </tbody>
+              {stageView === 'intake' && (
+                <>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Title</th>
+                      <th>Status</th>
+                      <th>Next Gate</th>
+                      <th>Risk</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rndIntake.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="muted">
+                          No R&D intake items.
+                        </td>
+                      </tr>
+                    )}
+                    {rndIntake.map((item) => (
+                      <tr key={`rnd-intake-${item.id}`}>
+                        <td>{item.id}</td>
+                        <td>{item.title || '-'}</td>
+                        <td>{item.status || '-'}</td>
+                        <td>{item.rnd_next_gate || '-'}</td>
+                        <td>{item.rnd_risk_level || '-'}</td>
+                        <td>
+                          <button
+                            className="ghost-btn tiny"
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void promoteRndIntakeToCommitment(item)}
+                          >
+                            Move to Commitment
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </>
+              )}
+              {stageView === 'commitment' && (
+                <>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Title</th>
+                      <th>Priority</th>
+                      <th>FTE (FE/BE/AI/PM)</th>
+                      <th>Timebox</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rndCommitments.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="muted">
+                          No R&D commitments.
+                        </td>
+                      </tr>
+                    )}
+                    {rndCommitments.map((item) => (
+                      <tr key={`rnd-commit-${item.id}`}>
+                        <td>{item.id}</td>
+                        <td>{item.title || '-'}</td>
+                        <td>{item.priority || '-'}</td>
+                        <td>{`${(item.fe_fte || 0).toFixed(1)}/${(item.be_fte || 0).toFixed(1)}/${(item.ai_fte || 0).toFixed(1)}/${(item.pm_fte || 0).toFixed(1)}`}</td>
+                        <td>{item.rnd_timebox_weeks || '-'}</td>
+                        <td>
+                          <div className="activity-chip-row">
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void promoteRndCommitmentToRoadmap(item)}
+                            >
+                              Move to Roadmap
+                            </button>
+                            <button className="ghost-btn tiny" type="button" disabled={busy} onClick={() => navigate('/roadmap')}>
+                              Open Commitment
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </>
+              )}
+              {stageView === 'roadmap' && (
+                <>
+                  <thead>
+                    <tr>
+                      <th>Plan ID</th>
+                      <th>Title</th>
+                      <th>Status</th>
+                      <th>Start</th>
+                      <th>End</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rndRoadmap.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="muted">
+                          No R&D roadmap items.
+                        </td>
+                      </tr>
+                    )}
+                    {rndRoadmap.map((item) => (
+                      <tr key={`rnd-roadmap-${item.id}`}>
+                        <td>{item.id}</td>
+                        <td>{item.title || '-'}</td>
+                        <td>{item.planning_status || '-'}</td>
+                        <td>{item.planned_start_date || '-'}</td>
+                        <td>{item.planned_end_date || '-'}</td>
+                        <td>
+                          <div className="activity-chip-row">
+                            <button
+                              className="ghost-btn tiny"
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void unlockRoadmapCommitment(item.bucket_item_id)}
+                            >
+                              Move back to Commitment
+                            </button>
+                            <button className="ghost-btn tiny" type="button" disabled={busy} onClick={() => navigate('/roadmap-agent')}>
+                              Open Roadmap
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </>
+              )}
             </table>
           </div>
         </section>
