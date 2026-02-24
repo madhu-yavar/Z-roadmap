@@ -2623,12 +2623,12 @@ button.activity-tag-chip:hover {
 }
 
 .rnd-lab .panel-card {
-  border: 1px solid #d9e1ec;
-  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.04);
+  border: 1px solid #d4dfeb;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.05);
 }
 
 .rnd-hero {
-  background: linear-gradient(180deg, #fbfdff 0%, #f7fbff 100%);
+  background: linear-gradient(180deg, #f8fcff 0%, #f2f9ff 100%);
 }
 
 .rnd-title-row {
@@ -2639,31 +2639,74 @@ button.activity-tag-chip:hover {
   margin: 0;
   font-size: 1.2rem;
   letter-spacing: 0.01em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rnd-title-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e6f4ff;
+  color: #0f4c81;
+  border: 1px solid #b7ddff;
 }
 
 .rnd-kpis .stat-item {
-  border: 1px solid #dbe5f2;
+  border: 1px solid #d8e6f5;
   background: #ffffff;
 }
 
 .rnd-section-head h3 {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rnd-mini-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef6ff;
+  color: #145ea8;
+  border: 1px solid #cde2fb;
 }
 
 .rnd-stage-tabs .ghost-btn.tiny {
   border-radius: 999px;
   min-height: 30px;
   padding: 0 12px;
+  border-color: #cfdceb;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.rnd-stage-tabs .ghost-btn.tiny.active-pill {
+  border-color: #9bc8f0;
+  background: #eaf5ff;
+  color: #0f4c81;
 }
 
 .rnd-table th {
-  background: #f7f9fc;
-  color: #344054;
+  background: #f4f8fc;
+  color: #334155;
   font-weight: 700;
 }
 
 .rnd-table td {
   vertical-align: middle;
+}
+
+.rnd-table tbody tr:hover {
+  background: #f9fcff;
 }
 
 .evidence-block {

@@ -1403,6 +1403,22 @@ function App() {
     }
   }
 
+  async function deleteIntakeItemsByIds(ids: number[]): Promise<boolean> {
+    if (!token || !ids.length) return false
+    setBusy(true)
+    setError('')
+    try {
+      await api('/intake/items/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }, token)
+      await loadData(token)
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed')
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function handleLogin(e: FormEvent) {
     e.preventDefault()
     setBusy(true)
@@ -3000,6 +3016,7 @@ function App() {
               unlockRoadmapCommitment={unlockRoadmapCommitment}
               deleteRoadmapItemsByIds={deleteRoadmapItemsByIds}
               deleteDocumentsByIds={deleteDocumentsByIds}
+              deleteIntakeItemsByIds={deleteIntakeItemsByIds}
               busy={busy}
             />
           }
@@ -3567,6 +3584,7 @@ type RndLabProps = {
   unlockRoadmapCommitment: (itemId: number) => Promise<void>
   deleteRoadmapItemsByIds: (ids: number[]) => Promise<boolean>
   deleteDocumentsByIds: (ids: number[]) => Promise<boolean>
+  deleteIntakeItemsByIds: (ids: number[]) => Promise<boolean>
   busy: boolean
 }
 
@@ -3584,6 +3602,7 @@ function RndLabPage({
   unlockRoadmapCommitment,
   deleteRoadmapItemsByIds,
   deleteDocumentsByIds,
+  deleteIntakeItemsByIds,
   busy,
 }: RndLabProps) {
   const navigate = useNavigate()
@@ -3645,8 +3664,8 @@ function RndLabPage({
     [rndIntake, rndCommitments, rndRoadmap],
   )
   const unassignedDocs = useMemo(
-    () => documents.filter((doc) => !intakeByDocument.has(doc.id)),
-    [documents, intakeByDocument],
+    () => documents.filter((doc) => !intakeByDocument.has(doc.id) && !roadmapLinkedDocIds.has(doc.id)),
+    [documents, intakeByDocument, roadmapLinkedDocIds],
   )
 
   useEffect(() => {
@@ -3684,6 +3703,15 @@ function RndLabPage({
     window.alert(`Deleted "${label}".`)
   }
 
+  async function deleteIntakeWithFeedback(itemId: number, label: string) {
+    const ok = await deleteIntakeItemsByIds([itemId])
+    if (!ok) {
+      window.alert(`Delete failed for "${label}". Check top error banner for reason.`)
+      return
+    }
+    window.alert(`Deleted "${label}".`)
+  }
+
   if (!isVP && !isCEO) {
     return (
       <main className="page-shell">
@@ -3700,7 +3728,16 @@ function RndLabPage({
       <main className="page-shell rnd-lab">
         <section className="panel-card rnd-hero">
           <div className="line-item rnd-title-row">
-            <h2 className="rnd-title">R&D Lab</h2>
+            <h2 className="rnd-title">
+              <span className="rnd-title-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M8 3h8" />
+                  <path d="M9 3v5l-4 7a4 4 0 0 0 3.5 6h7A4 4 0 0 0 19 15l-4-7V3" />
+                  <path d="M8 14h8" />
+                </svg>
+              </span>
+              R&D Lab
+            </h2>
             <span className="muted">VP-owned intake for AI/R&D experiments and MVP conversion flow.</span>
           </div>
           <details className="flat-detail" open>
@@ -3740,7 +3777,14 @@ function RndLabPage({
 
         <section className="panel-card rnd-section">
           <div className="line-item rnd-section-head">
-            <h3>Create R&D Intake</h3>
+            <h3>
+              <span className="rnd-mini-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              </span>
+              Create R&D Intake
+            </h3>
             {isVP && (
               <button className="ghost-btn tiny" type="button" onClick={() => setManualOpen(true)}>
                 Manual R&D Intake
@@ -3802,8 +3846,8 @@ function RndLabPage({
                           <button
                             className="ghost-btn tiny"
                             type="button"
-                            disabled={busy || (!isCEO && roadmapLinkedDocIds.has(doc.id))}
-                            title={!isCEO && roadmapLinkedDocIds.has(doc.id) ? 'Only CEO can delete roadmap-linked documents.' : 'Delete document'}
+                            disabled={busy}
+                            title="Delete document"
                             onClick={async () => {
                               const ok = window.confirm(`Delete uploaded document "${doc.file_name}"?`)
                               if (!ok) return
@@ -3824,7 +3868,14 @@ function RndLabPage({
 
         <section className="panel-card rnd-section">
           <div className="line-item rnd-section-head">
-            <h3>R&D Stage Workspace</h3>
+            <h3>
+              <span className="rnd-mini-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 6h16M4 12h10M4 18h6" />
+                </svg>
+              </span>
+              R&D Stage Workspace
+            </h3>
             <div className="activity-chip-row rnd-stage-tabs">
               <button
                 className={`ghost-btn tiny${stageView === 'intake' ? ' active-pill' : ''}`}
@@ -3900,7 +3951,7 @@ function RndLabPage({
                               onClick={async () => {
                                 const ok = window.confirm(`Delete R&D intake "${item.title}"?`)
                                 if (!ok) return
-                                await deleteDocumentWithFeedback(item.document_id, item.title || `Intake ${item.id}`)
+                                await deleteIntakeWithFeedback(item.id, item.title || `Intake ${item.id}`)
                               }}
                             >
                               Delete

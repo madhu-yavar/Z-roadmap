@@ -697,13 +697,31 @@ def review_intake_item(
 def bulk_delete_intake_items(
     payload: BulkIdsIn,
     db: Session = Depends(get_db),
-    _=Depends(require_roles(UserRole.CEO)),
+    current_user: User = Depends(require_roles(UserRole.CEO, UserRole.VP)),
 ):
     ids = sorted(set(payload.ids))
     if not ids:
         return BulkDeleteOut(deleted=0)
 
     items = db.query(IntakeItem).filter(IntakeItem.id.in_(ids)).all()
+    if current_user.role == UserRole.VP:
+        blocked = [
+            item
+            for item in items
+            if item.roadmap_item_id
+            or ((item.status or "").strip().lower() not in {"new", "draft", "understanding_pending"})
+        ]
+        if blocked:
+            blocked_titles = [item.title for item in blocked if item.title]
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "VP can delete only intake-stage items (new/draft/understanding_pending) "
+                    "that are not linked to roadmap. "
+                    f"Blocked: {', '.join(blocked_titles) if blocked_titles else [item.id for item in blocked]}"
+                ),
+            )
+
     roadmap_ids = [item.roadmap_item_id for item in items if item.roadmap_item_id]
     deleted = 0
     for item in items:
