@@ -2305,6 +2305,31 @@ button.icon-only:disabled:hover {
   box-shadow: var(--shadow-xl);
 }
 
+.rnd-manual-modal {
+  width: min(920px, 96vw);
+  max-height: calc(100vh - 28px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.rnd-manual-head {
+  display: grid;
+  gap: 6px;
+}
+
+.rnd-manual-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.rnd-manual-body label span.muted {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.78rem;
+}
+
 .metadata-modal {
   width: min(640px, 96vw);
   max-height: calc(100vh - 32px);

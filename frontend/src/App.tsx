@@ -1613,6 +1613,25 @@ function App() {
     }
   }
 
+  async function uploadDocumentForRnd(file: File, notes: string): Promise<DocumentItem> {
+    if (!token) throw new Error('Session expired. Please sign in again.')
+    setBusy(true)
+    setError('')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('notes', notes || 'R&D manual intake attachment')
+      const doc = await api<DocumentItem>('/documents/upload', { method: 'POST', body: form }, token)
+      await loadData(token)
+      return doc
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Document upload failed')
+      throw err
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function promoteRndIntakeToCommitment(item: IntakeItem) {
     if (!token) return
     setBusy(true)
@@ -3011,6 +3030,7 @@ function App() {
               roadmapPlanItems={roadmapPlanItems}
               analyzeDocument={analyzeDocument}
               createManualIntake={createManualIntake}
+              uploadDocumentForRnd={uploadDocumentForRnd}
               promoteRndIntakeToCommitment={promoteRndIntakeToCommitment}
               promoteRndCommitmentToRoadmap={promoteRndCommitmentToRoadmap}
               unlockRoadmapCommitment={unlockRoadmapCommitment}
@@ -3579,6 +3599,7 @@ type RndLabProps = {
   roadmapPlanItems: RoadmapPlanItem[]
   analyzeDocument: (documentId: number, seed?: IntakeSeedMeta) => Promise<void>
   createManualIntake: (payload: ManualIntakeIn) => Promise<void>
+  uploadDocumentForRnd: (file: File, notes: string) => Promise<DocumentItem>
   promoteRndIntakeToCommitment: (item: IntakeItem) => Promise<void>
   promoteRndCommitmentToRoadmap: (item: RoadmapItem) => Promise<void>
   unlockRoadmapCommitment: (itemId: number) => Promise<void>
@@ -3597,6 +3618,7 @@ function RndLabPage({
   roadmapPlanItems,
   analyzeDocument,
   createManualIntake,
+  uploadDocumentForRnd,
   promoteRndIntakeToCommitment,
   promoteRndCommitmentToRoadmap,
   unlockRoadmapCommitment,
@@ -3609,6 +3631,8 @@ function RndLabPage({
   const isVP = currentUserRole === 'VP'
   const isCEO = currentUserRole === 'CEO'
   const [manualOpen, setManualOpen] = useState(false)
+  const [manualAttachment, setManualAttachment] = useState<File | null>(null)
+  const [manualAttachmentKey, setManualAttachmentKey] = useState(0)
   const [stageView, setStageView] = useState<'intake' | 'commitment' | 'roadmap'>('intake')
   const [manualForm, setManualForm] = useState<ManualIntakeIn>({
     title: '',
@@ -4101,15 +4125,49 @@ function RndLabPage({
 
       {manualOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true">
-          <div className="modal-card">
-            <h3>Manual R&D Intake (VP)</h3>
-            <div className="stack">
+          <div className="modal-card rnd-manual-modal">
+            <div className="rnd-manual-head">
+              <h3>Manual R&D Intake (VP)</h3>
+              <p className="muted">
+                Project context is fixed to <strong>Internal Product Development</strong> for R&D.
+                Attach optional BRD/PPT/XLS to auto-generate intake; otherwise create fully manual entry.
+              </p>
+            </div>
+            <div className="stack rnd-manual-body">
+              <div className="split-2">
+                <label>
+                  Priority
+                  <select value={manualForm.priority} onChange={(e) => setManualForm((s) => ({ ...s, priority: e.target.value }))}>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </label>
+                <label>
+                  Project Context
+                  <input value="Internal Product Development (Fixed for R&D)" disabled readOnly />
+                </label>
+              </div>
+
               <label>
-                Title
+                Optional BRD / Deck / Sheet
+                <input
+                  key={manualAttachmentKey}
+                  type="file"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.csv"
+                  onChange={(e) => setManualAttachment(e.target.files?.[0] || null)}
+                />
+                <span className="muted">
+                  If file is attached, system generates scope/activities from document and you can refine in Intake Review.
+                </span>
+              </label>
+
+              <label>
+                Title {manualAttachment ? '(optional if BRD attached)' : ''}
                 <input value={manualForm.title} onChange={(e) => setManualForm((s) => ({ ...s, title: e.target.value }))} />
               </label>
               <label>
-                Scope
+                Scope {manualAttachment ? '(optional if BRD attached)' : ''}
                 <textarea rows={3} value={manualForm.scope} onChange={(e) => setManualForm((s) => ({ ...s, scope: e.target.value }))} />
               </label>
               <label>
@@ -4128,71 +4186,60 @@ function RndLabPage({
                   }
                 />
               </label>
-              <div className="split-2">
-                <label>
-                  Priority
-                  <select value={manualForm.priority} onChange={(e) => setManualForm((s) => ({ ...s, priority: e.target.value }))}>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </label>
-                <label>
-                  Project Context
-                  <select value={manualForm.project_context} onChange={(e) => setManualForm((s) => ({ ...s, project_context: e.target.value }))}>
-                    <option value="internal">Internal Product Development</option>
-                    <option value="client">Client Project</option>
-                  </select>
-                </label>
-              </div>
-              <label>
-                Hypothesis
-                <textarea rows={2} value={manualForm.rnd_hypothesis} onChange={(e) => setManualForm((s) => ({ ...s, rnd_hypothesis: e.target.value }))} />
-              </label>
-              <label>
-                Experiment Goal
-                <textarea rows={2} value={manualForm.rnd_experiment_goal} onChange={(e) => setManualForm((s) => ({ ...s, rnd_experiment_goal: e.target.value }))} />
-              </label>
-              <label>
-                Success Criteria
-                <textarea rows={2} value={manualForm.rnd_success_criteria} onChange={(e) => setManualForm((s) => ({ ...s, rnd_success_criteria: e.target.value }))} />
-              </label>
-              <div className="split-2">
-                <label>
-                  Timebox (weeks)
-                  <input
-                    type="number"
-                    min={1}
-                    value={manualForm.rnd_timebox_weeks ?? ''}
-                    onChange={(e) => setManualForm((s) => ({ ...s, rnd_timebox_weeks: e.target.value ? Number(e.target.value) : null }))}
-                  />
-                </label>
-                <label>
-                  Decision Date
-                  <input type="date" value={manualForm.rnd_decision_date} onChange={(e) => setManualForm((s) => ({ ...s, rnd_decision_date: e.target.value }))} />
-                </label>
-              </div>
-              <div className="split-2">
-                <label>
-                  Next Gate
-                  <select value={manualForm.rnd_next_gate} onChange={(e) => setManualForm((s) => ({ ...s, rnd_next_gate: e.target.value }))}>
-                    <option value="">Select</option>
-                    <option value="continue">Continue</option>
-                    <option value="pivot">Pivot</option>
-                    <option value="stop">Stop</option>
-                    <option value="productize">Productize</option>
-                  </select>
-                </label>
-                <label>
-                  Risk Level
-                  <select value={manualForm.rnd_risk_level} onChange={(e) => setManualForm((s) => ({ ...s, rnd_risk_level: e.target.value }))}>
-                    <option value="">Select</option>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </label>
-              </div>
+
+              <details className="flat-detail">
+                <summary>R&D Framing (Optional but recommended)</summary>
+                <div className="stack">
+                  <label>
+                    Hypothesis
+                    <textarea rows={2} value={manualForm.rnd_hypothesis} onChange={(e) => setManualForm((s) => ({ ...s, rnd_hypothesis: e.target.value }))} />
+                  </label>
+                  <label>
+                    Experiment Goal
+                    <textarea rows={2} value={manualForm.rnd_experiment_goal} onChange={(e) => setManualForm((s) => ({ ...s, rnd_experiment_goal: e.target.value }))} />
+                  </label>
+                  <label>
+                    Success Criteria
+                    <textarea rows={2} value={manualForm.rnd_success_criteria} onChange={(e) => setManualForm((s) => ({ ...s, rnd_success_criteria: e.target.value }))} />
+                  </label>
+                  <div className="split-2">
+                    <label>
+                      Timebox (weeks)
+                      <input
+                        type="number"
+                        min={1}
+                        value={manualForm.rnd_timebox_weeks ?? ''}
+                        onChange={(e) => setManualForm((s) => ({ ...s, rnd_timebox_weeks: e.target.value ? Number(e.target.value) : null }))}
+                      />
+                    </label>
+                    <label>
+                      Decision Date
+                      <input type="date" value={manualForm.rnd_decision_date} onChange={(e) => setManualForm((s) => ({ ...s, rnd_decision_date: e.target.value }))} />
+                    </label>
+                  </div>
+                  <div className="split-2">
+                    <label>
+                      Next Gate
+                      <select value={manualForm.rnd_next_gate} onChange={(e) => setManualForm((s) => ({ ...s, rnd_next_gate: e.target.value }))}>
+                        <option value="">Select</option>
+                        <option value="continue">Continue</option>
+                        <option value="pivot">Pivot</option>
+                        <option value="stop">Stop</option>
+                        <option value="productize">Productize</option>
+                      </select>
+                    </label>
+                    <label>
+                      Risk Level
+                      <select value={manualForm.rnd_risk_level} onChange={(e) => setManualForm((s) => ({ ...s, rnd_risk_level: e.target.value }))}>
+                        <option value="">Select</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              </details>
             </div>
             <div className="row-actions">
               <button className="ghost-btn" type="button" onClick={() => setManualOpen(false)}>
@@ -4201,13 +4248,36 @@ function RndLabPage({
               <button
                 className="primary-btn"
                 type="button"
-                disabled={busy || !isVP || !manualForm.title.trim()}
+                disabled={busy || !isVP || (!manualAttachment && !manualForm.title.trim())}
                 onClick={async () => {
-                  await createManualIntake({
-                    ...manualForm,
-                    delivery_mode: 'rnd',
-                  })
+                  if (manualAttachment) {
+                    const doc = await uploadDocumentForRnd(
+                      manualAttachment,
+                      `R&D intake attachment${manualForm.title.trim() ? `: ${manualForm.title.trim()}` : ''}`,
+                    )
+                    await analyzeDocument(doc.id, {
+                      priority: manualForm.priority,
+                      project_context: 'internal',
+                      initiative_type: manualForm.initiative_type || 'new_feature',
+                      delivery_mode: 'rnd',
+                      rnd_hypothesis: manualForm.rnd_hypothesis,
+                      rnd_experiment_goal: manualForm.rnd_experiment_goal,
+                      rnd_success_criteria: manualForm.rnd_success_criteria,
+                      rnd_timebox_weeks: manualForm.rnd_timebox_weeks,
+                      rnd_decision_date: manualForm.rnd_decision_date,
+                      rnd_next_gate: manualForm.rnd_next_gate,
+                      rnd_risk_level: manualForm.rnd_risk_level,
+                    })
+                  } else {
+                    await createManualIntake({
+                      ...manualForm,
+                      project_context: 'internal',
+                      delivery_mode: 'rnd',
+                    })
+                  }
                   setManualOpen(false)
+                  setManualAttachment(null)
+                  setManualAttachmentKey((k) => k + 1)
                   setManualForm({
                     title: '',
                     scope: '',
