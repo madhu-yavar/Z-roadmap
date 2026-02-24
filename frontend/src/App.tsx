@@ -3849,9 +3849,10 @@ function RndLabPage({
                             disabled={busy}
                             title="Delete document"
                             onClick={async () => {
-                              const ok = window.confirm(`Delete uploaded document "${doc.file_name}"?`)
+                              const label = (doc.file_name || '').trim() || `Document #${doc.id}`
+                              const ok = window.confirm(`Delete uploaded document "${label}"?`)
                               if (!ok) return
-                              await deleteDocumentWithFeedback(doc.id, doc.file_name)
+                              await deleteDocumentWithFeedback(doc.id, label)
                             }}
                           >
                             Delete
@@ -3949,9 +3950,10 @@ function RndLabPage({
                               type="button"
                               disabled={busy}
                               onClick={async () => {
-                                const ok = window.confirm(`Delete R&D intake "${item.title}"?`)
+                                const label = (item.title || '').trim() || `Intake #${item.id}`
+                                const ok = window.confirm(`Delete R&D intake "${label}"?`)
                                 if (!ok) return
-                                await deleteIntakeWithFeedback(item.id, item.title || `Intake ${item.id}`)
+                                await deleteIntakeWithFeedback(item.id, label)
                               }}
                             >
                               Delete
@@ -4008,9 +4010,10 @@ function RndLabPage({
                               type="button"
                               disabled={busy}
                               onClick={async () => {
-                                const ok = window.confirm(`Delete R&D commitment "${item.title}"?`)
+                                const label = (item.title || '').trim() || `Commitment #${item.id}`
+                                const ok = window.confirm(`Delete R&D commitment "${label}"?`)
                                 if (!ok) return
-                                await deleteCommitmentWithFeedback(item.id, item.title || `Commitment ${item.id}`)
+                                await deleteCommitmentWithFeedback(item.id, label)
                               }}
                             >
                               Delete
@@ -4073,11 +4076,12 @@ function RndLabPage({
                               onClick={async () => {
                                 const bucket = roadmapItemById.get(item.bucket_item_id)
                                 if (!bucket?.source_document_id) return
+                                const label = (item.title || '').trim() || `Roadmap #${item.id}`
                                 const ok = window.confirm(
-                                  `Delete roadmap item "${item.title}" and linked source document? This cannot be undone.`,
+                                  `Delete roadmap item "${label}" and linked source document? This cannot be undone.`,
                                 )
                                 if (!ok) return
-                                await deleteDocumentWithFeedback(bucket.source_document_id, item.title || `Roadmap ${item.id}`)
+                                await deleteDocumentWithFeedback(bucket.source_document_id, label)
                               }}
                             >
                               Delete
