@@ -2622,6 +2622,50 @@ button.activity-tag-chip:hover {
   margin: 6px 0 10px;
 }
 
+.rnd-lab .panel-card {
+  border: 1px solid #d9e1ec;
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.04);
+}
+
+.rnd-hero {
+  background: linear-gradient(180deg, #fbfdff 0%, #f7fbff 100%);
+}
+
+.rnd-title-row {
+  align-items: center;
+}
+
+.rnd-title {
+  margin: 0;
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+}
+
+.rnd-kpis .stat-item {
+  border: 1px solid #dbe5f2;
+  background: #ffffff;
+}
+
+.rnd-section-head h3 {
+  margin: 0;
+}
+
+.rnd-stage-tabs .ghost-btn.tiny {
+  border-radius: 999px;
+  min-height: 30px;
+  padding: 0 12px;
+}
+
+.rnd-table th {
+  background: #f7f9fc;
+  color: #344054;
+  font-weight: 700;
+}
+
+.rnd-table td {
+  vertical-align: middle;
+}
+
 .evidence-block {
   border: 1px solid var(--line);
   border-radius: 8px;

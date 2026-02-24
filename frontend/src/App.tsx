@@ -1353,6 +1353,14 @@ function App() {
   async function bulkDeleteRoadmap(idsOverride?: number[]) {
     const ids = idsOverride && idsOverride.length ? idsOverride : selectedRoadmapIds
     if (!token || !ids.length) return
+    const ok = await deleteRoadmapItemsByIds(ids)
+    if (!ok) return
+    setSelectedRoadmapIds([])
+    setSelectedRoadmapId(null)
+  }
+
+  async function deleteRoadmapItemsByIds(ids: number[]): Promise<boolean> {
+    if (!token || !ids.length) return false
     setBusy(true)
     setError('')
     try {
@@ -1361,11 +1369,11 @@ function App() {
         { method: 'POST', body: JSON.stringify({ ids }) },
         token,
       )
-      setSelectedRoadmapIds([])
-      setSelectedRoadmapId(null)
       await loadData(token)
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed')
+      return false
     } finally {
       setBusy(false)
     }
@@ -1374,14 +1382,22 @@ function App() {
   async function bulkDeleteDocuments(idsOverride?: number[]) {
     const ids = idsOverride && idsOverride.length ? idsOverride : selectedDocumentIds
     if (!token || !ids.length) return
+    const ok = await deleteDocumentsByIds(ids)
+    if (!ok) return
+    setSelectedDocumentIds([])
+  }
+
+  async function deleteDocumentsByIds(ids: number[]): Promise<boolean> {
+    if (!token || !ids.length) return false
     setBusy(true)
     setError('')
     try {
       await api('/documents/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }, token)
-      setSelectedDocumentIds([])
       await loadData(token)
+      return true
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed')
+      return false
     } finally {
       setBusy(false)
     }
@@ -2982,8 +2998,8 @@ function App() {
               promoteRndIntakeToCommitment={promoteRndIntakeToCommitment}
               promoteRndCommitmentToRoadmap={promoteRndCommitmentToRoadmap}
               unlockRoadmapCommitment={unlockRoadmapCommitment}
-              bulkDeleteRoadmap={bulkDeleteRoadmap}
-              bulkDeleteDocuments={bulkDeleteDocuments}
+              deleteRoadmapItemsByIds={deleteRoadmapItemsByIds}
+              deleteDocumentsByIds={deleteDocumentsByIds}
               busy={busy}
             />
           }
@@ -3549,8 +3565,8 @@ type RndLabProps = {
   promoteRndIntakeToCommitment: (item: IntakeItem) => Promise<void>
   promoteRndCommitmentToRoadmap: (item: RoadmapItem) => Promise<void>
   unlockRoadmapCommitment: (itemId: number) => Promise<void>
-  bulkDeleteRoadmap: (idsOverride?: number[]) => Promise<void>
-  bulkDeleteDocuments: (idsOverride?: number[]) => Promise<void>
+  deleteRoadmapItemsByIds: (ids: number[]) => Promise<boolean>
+  deleteDocumentsByIds: (ids: number[]) => Promise<boolean>
   busy: boolean
 }
 
@@ -3566,8 +3582,8 @@ function RndLabPage({
   promoteRndIntakeToCommitment,
   promoteRndCommitmentToRoadmap,
   unlockRoadmapCommitment,
-  bulkDeleteRoadmap,
-  bulkDeleteDocuments,
+  deleteRoadmapItemsByIds,
+  deleteDocumentsByIds,
   busy,
 }: RndLabProps) {
   const navigate = useNavigate()
@@ -3604,6 +3620,13 @@ function RndLabPage({
     const map = new Map<number, RoadmapItem>()
     for (const row of roadmapItems) map.set(row.id, row)
     return map
+  }, [roadmapItems])
+  const roadmapLinkedDocIds = useMemo(() => {
+    const ids = new Set<number>()
+    for (const row of roadmapItems) {
+      if (row.source_document_id) ids.add(row.source_document_id)
+    }
+    return ids
   }, [roadmapItems])
   const rndRoadmapBucketIds = useMemo(() => new Set(rndRoadmap.map((item) => item.bucket_item_id)), [rndRoadmap])
   const rndCommitments = useMemo(
@@ -3643,6 +3666,24 @@ function RndLabPage({
     }
   }, [rndIntake.length, rndCommitments.length, rndRoadmap.length, stageView])
 
+  async function deleteDocumentWithFeedback(documentId: number, label: string) {
+    const ok = await deleteDocumentsByIds([documentId])
+    if (!ok) {
+      window.alert(`Delete failed for "${label}". Check top error banner for reason.`)
+      return
+    }
+    window.alert(`Deleted "${label}".`)
+  }
+
+  async function deleteCommitmentWithFeedback(itemId: number, label: string) {
+    const ok = await deleteRoadmapItemsByIds([itemId])
+    if (!ok) {
+      window.alert(`Delete failed for "${label}". Check top error banner for reason.`)
+      return
+    }
+    window.alert(`Deleted "${label}".`)
+  }
+
   if (!isVP && !isCEO) {
     return (
       <main className="page-shell">
@@ -3656,10 +3697,10 @@ function RndLabPage({
 
   return (
     <>
-      <main className="page-shell">
-        <section className="panel-card">
-          <div className="line-item">
-            <h2>R&D Lab</h2>
+      <main className="page-shell rnd-lab">
+        <section className="panel-card rnd-hero">
+          <div className="line-item rnd-title-row">
+            <h2 className="rnd-title">R&D Lab</h2>
             <span className="muted">VP-owned intake for AI/R&D experiments and MVP conversion flow.</span>
           </div>
           <details className="flat-detail" open>
@@ -3671,7 +3712,7 @@ function RndLabPage({
               <li>After commit, item moves to roadmap plan and appears in R&D Roadmap metrics and dashboard charts.</li>
             </ol>
           </details>
-          <div className="stats-grid">
+          <div className="stats-grid rnd-kpis">
             <div className="stat-item">
               <p>R&D Intake</p>
               <h2>{rndIntake.length}</h2>
@@ -3697,8 +3738,8 @@ function RndLabPage({
           <p className="muted">Single-state model: one project appears in only one stage at a time (Intake or Commitment or Roadmap).</p>
         </section>
 
-        <section className="panel-card">
-          <div className="line-item">
+        <section className="panel-card rnd-section">
+          <div className="line-item rnd-section-head">
             <h3>Create R&D Intake</h3>
             {isVP && (
               <button className="ghost-btn tiny" type="button" onClick={() => setManualOpen(true)}>
@@ -3714,7 +3755,7 @@ function RndLabPage({
           <details className="flat-detail">
             <summary>Start from uploaded documents ({unassignedDocs.length})</summary>
             <div className="intake-table-wrap">
-              <table className="docs-table">
+              <table className="docs-table rnd-table">
                 <thead>
                   <tr>
                     <th>Document</th>
@@ -3761,11 +3802,12 @@ function RndLabPage({
                           <button
                             className="ghost-btn tiny"
                             type="button"
-                            disabled={busy}
+                            disabled={busy || (!isCEO && roadmapLinkedDocIds.has(doc.id))}
+                            title={!isCEO && roadmapLinkedDocIds.has(doc.id) ? 'Only CEO can delete roadmap-linked documents.' : 'Delete document'}
                             onClick={async () => {
                               const ok = window.confirm(`Delete uploaded document "${doc.file_name}"?`)
                               if (!ok) return
-                              await bulkDeleteDocuments([doc.id])
+                              await deleteDocumentWithFeedback(doc.id, doc.file_name)
                             }}
                           >
                             Delete
@@ -3780,10 +3822,10 @@ function RndLabPage({
           </details>
         </section>
 
-        <section className="panel-card">
-          <div className="line-item">
+        <section className="panel-card rnd-section">
+          <div className="line-item rnd-section-head">
             <h3>R&D Stage Workspace</h3>
-            <div className="activity-chip-row">
+            <div className="activity-chip-row rnd-stage-tabs">
               <button
                 className={`ghost-btn tiny${stageView === 'intake' ? ' active-pill' : ''}`}
                 type="button"
@@ -3813,7 +3855,7 @@ function RndLabPage({
             {stageView === 'roadmap' && 'Roadmap to Commitment transition: unlock item to move it back for reshaping.'}
           </p>
           <div className="intake-table-wrap">
-            <table className="docs-table">
+            <table className="docs-table rnd-table">
               {stageView === 'intake' && (
                 <>
                   <thead>
@@ -3858,7 +3900,7 @@ function RndLabPage({
                               onClick={async () => {
                                 const ok = window.confirm(`Delete R&D intake "${item.title}"?`)
                                 if (!ok) return
-                                await bulkDeleteDocuments([item.document_id])
+                                await deleteDocumentWithFeedback(item.document_id, item.title || `Intake ${item.id}`)
                               }}
                             >
                               Delete
@@ -3917,7 +3959,7 @@ function RndLabPage({
                               onClick={async () => {
                                 const ok = window.confirm(`Delete R&D commitment "${item.title}"?`)
                                 if (!ok) return
-                                await bulkDeleteRoadmap([item.id])
+                                await deleteCommitmentWithFeedback(item.id, item.title || `Commitment ${item.id}`)
                               }}
                             >
                               Delete
@@ -3984,7 +4026,7 @@ function RndLabPage({
                                   `Delete roadmap item "${item.title}" and linked source document? This cannot be undone.`,
                                 )
                                 if (!ok) return
-                                await bulkDeleteDocuments([bucket.source_document_id])
+                                await deleteDocumentWithFeedback(bucket.source_document_id, item.title || `Roadmap ${item.id}`)
                               }}
                             >
                               Delete
