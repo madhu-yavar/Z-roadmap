@@ -705,20 +705,26 @@ def bulk_delete_intake_items(
 
     items = db.query(IntakeItem).filter(IntakeItem.id.in_(ids)).all()
     if current_user.role == UserRole.VP:
-        blocked = [
-            item
-            for item in items
-            if item.roadmap_item_id
-            or ((item.status or "").strip().lower() not in {"new", "draft", "understanding_pending"})
-        ]
+        blocked: list[tuple[IntakeItem, list[str]]] = []
+        for item in items:
+            reasons: list[str] = []
+            if item.roadmap_item_id:
+                reasons.append("linked to roadmap")
+            if (item.status or "").strip().lower() not in {"new", "draft", "understanding_pending"}:
+                reasons.append(f"status={item.status}")
+            if reasons:
+                blocked.append((item, reasons))
         if blocked:
-            blocked_titles = [item.title for item in blocked if item.title]
+            blocked_details = [
+                f"#{item.id} ({', '.join(reasons)})"
+                for item, reasons in blocked
+            ]
             raise HTTPException(
                 status_code=403,
                 detail=(
                     "VP can delete only intake-stage items (new/draft/understanding_pending) "
                     "that are not linked to roadmap. "
-                    f"Blocked: {', '.join(blocked_titles) if blocked_titles else [item.id for item in blocked]}"
+                    f"Blocked: {', '.join(blocked_details)}"
                 ),
             )
 

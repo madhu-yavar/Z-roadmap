@@ -2623,12 +2623,33 @@ button.activity-tag-chip:hover {
 }
 
 .rnd-lab .panel-card {
-  border: 1px solid #d4dfeb;
-  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.05);
+  border: 1px solid #cfe0f5;
+  box-shadow: 0 10px 26px rgba(9, 30, 66, 0.08);
 }
 
 .rnd-hero {
-  background: linear-gradient(180deg, #f8fcff 0%, #f2f9ff 100%);
+  background:
+    radial-gradient(130% 120% at 100% 0%, rgba(34, 211, 238, 0.2) 0%, rgba(34, 211, 238, 0) 55%),
+    linear-gradient(135deg, #0ea5e9 0%, #2563eb 56%, #3b82f6 100%);
+  color: #ecfeff;
+  border-color: rgba(125, 211, 252, 0.45) !important;
+}
+
+.rnd-hero .muted,
+.rnd-hero p,
+.rnd-hero li,
+.rnd-hero summary {
+  color: rgba(236, 254, 255, 0.9);
+}
+
+.rnd-hero .flat-detail {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(186, 230, 253, 0.5);
+}
+
+.rnd-hero .flat-detail p,
+.rnd-hero .flat-detail ul {
+  color: #f0f9ff;
 }
 
 .rnd-title-row {
@@ -2651,14 +2672,19 @@ button.activity-tag-chip:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #e6f4ff;
-  color: #0f4c81;
-  border: 1px solid #b7ddff;
+  background: rgba(255, 255, 255, 0.16);
+  color: #f0f9ff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .rnd-kpis .stat-item {
-  border: 1px solid #d8e6f5;
-  background: #ffffff;
+  border: 1px solid rgba(147, 197, 253, 0.45);
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.rnd-kpis .stat-item p,
+.rnd-kpis .stat-item h2 {
+  color: #f8fafc;
 }
 
 .rnd-section-head h3 {
@@ -2675,29 +2701,29 @@ button.activity-tag-chip:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #eef6ff;
-  color: #145ea8;
-  border: 1px solid #cde2fb;
+  background: #ecfeff;
+  color: #0e7490;
+  border: 1px solid #99f6e4;
 }
 
 .rnd-stage-tabs .ghost-btn.tiny {
   border-radius: 999px;
   min-height: 30px;
   padding: 0 12px;
-  border-color: #cfdceb;
-  background: #ffffff;
-  color: #1f2937;
+  border-color: #bfdbfe;
+  background: #f0f9ff;
+  color: #1e3a8a;
 }
 
 .rnd-stage-tabs .ghost-btn.tiny.active-pill {
-  border-color: #9bc8f0;
-  background: #eaf5ff;
-  color: #0f4c81;
+  border-color: #38bdf8;
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
 .rnd-table th {
-  background: #f4f8fc;
-  color: #334155;
+  background: linear-gradient(180deg, #eff6ff 0%, #e0f2fe 100%);
+  color: #1e3a8a;
   font-weight: 700;
 }
 
@@ -2706,7 +2732,79 @@ button.activity-tag-chip:hover {
 }
 
 .rnd-table tbody tr:hover {
-  background: #f9fcff;
+  background: #f0f9ff;
+}
+
+.rnd-launch-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.rnd-launch-card {
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+  padding: 14px;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(186, 230, 253, 0.35) 0%, rgba(255, 255, 255, 0) 55%),
+    #ffffff;
+  display: grid;
+  gap: 10px;
+}
+
+.rnd-launch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rnd-launch-head h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.98rem;
+}
+
+.rnd-count {
+  min-width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+  border: 1px solid #93c5fd;
+}
+
+.rnd-doc-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rnd-doc-row {
+  border: 1px solid #dbeafe;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rnd-doc-row strong {
+  display: block;
+  max-width: 620px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rnd-doc-row .muted {
+  display: block;
+  font-size: 0.74rem;
+  margin-top: 2px;
 }
 
 .evidence-block {

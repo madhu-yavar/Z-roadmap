@@ -3628,7 +3628,10 @@ function RndLabPage({
   })
 
   const rndIntake = useMemo(
-    () => intakeItems.filter((item) => (item.delivery_mode || '').toLowerCase() === 'rnd'),
+    () =>
+      intakeItems.filter(
+        (item) => (item.delivery_mode || '').toLowerCase() === 'rnd' && !item.roadmap_item_id,
+      ),
     [intakeItems],
   )
   const rndRoadmap = useMemo(
@@ -3796,75 +3799,73 @@ function RndLabPage({
               ? 'Use uploaded documents to start R&D intake or create manual intake.'
               : 'CEO can review and transition stages. VP role is required to create new R&D intake.'}
           </p>
-          <details className="flat-detail">
-            <summary>Start from uploaded documents ({unassignedDocs.length})</summary>
-            <div className="intake-table-wrap">
-              <table className="docs-table rnd-table">
-                <thead>
-                  <tr>
-                    <th>Document</th>
-                    <th>Type</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unassignedDocs.length === 0 && (
-                    <tr>
-                      <td colSpan={3} className="muted">
-                        No unassigned uploaded documents available.
-                      </td>
-                    </tr>
-                  )}
-                  {unassignedDocs.map((doc) => (
-                    <tr key={doc.id}>
-                      <td>{doc.file_name}</td>
-                      <td>{(doc.file_type || '').toUpperCase()}</td>
-                      <td>
-                        <div className="activity-chip-row">
-                          <button
-                            className="ghost-btn tiny"
-                            type="button"
-                            disabled={busy || !isVP}
-                            onClick={() =>
-                              analyzeDocument(doc.id, {
-                                priority: 'medium',
-                                project_context: 'internal',
-                                initiative_type: 'new_feature',
-                                delivery_mode: 'rnd',
-                                rnd_hypothesis: '',
-                                rnd_experiment_goal: '',
-                                rnd_success_criteria: '',
-                                rnd_timebox_weeks: null,
-                                rnd_decision_date: '',
-                                rnd_next_gate: '',
-                                rnd_risk_level: '',
-                              })
-                            }
-                          >
-                            Start R&D Intake
-                          </button>
-                          <button
-                            className="ghost-btn tiny"
-                            type="button"
-                            disabled={busy}
-                            title="Delete document"
-                            onClick={async () => {
-                              const label = (doc.file_name || '').trim() || `Document #${doc.id}`
-                              const ok = window.confirm(`Delete uploaded document "${label}"?`)
-                              if (!ok) return
-                              await deleteDocumentWithFeedback(doc.id, label)
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+          <div className="rnd-launch-grid">
+            <article className="rnd-launch-card">
+              <div className="rnd-launch-head">
+                <h4>From Uploaded Documents</h4>
+                <span className="rnd-count">{unassignedDocs.length}</span>
+              </div>
+              {unassignedDocs.length === 0 ? (
+                <>
+                  <p className="muted">No unassigned documents. Upload BRD/PPT/RFP in Intake to start R&D extraction.</p>
+                  <button className="ghost-btn tiny" type="button" onClick={() => navigate('/intake')}>
+                    Open Intake Upload
+                  </button>
+                </>
+              ) : (
+                <div className="rnd-doc-list">
+                  {unassignedDocs.slice(0, 5).map((doc) => (
+                    <div key={doc.id} className="rnd-doc-row">
+                      <div>
+                        <strong>{doc.file_name}</strong>
+                        <span className="muted">{(doc.file_type || '').toUpperCase()}</span>
+                      </div>
+                      <div className="activity-chip-row">
+                        <button
+                          className="ghost-btn tiny"
+                          type="button"
+                          disabled={busy || !isVP}
+                          onClick={() =>
+                            analyzeDocument(doc.id, {
+                              priority: 'medium',
+                              project_context: 'internal',
+                              initiative_type: 'new_feature',
+                              delivery_mode: 'rnd',
+                              rnd_hypothesis: '',
+                              rnd_experiment_goal: '',
+                              rnd_success_criteria: '',
+                              rnd_timebox_weeks: null,
+                              rnd_decision_date: '',
+                              rnd_next_gate: '',
+                              rnd_risk_level: '',
+                            })
+                          }
+                        >
+                          Start
+                        </button>
+                        <button
+                          className="ghost-btn tiny"
+                          type="button"
+                          disabled={busy}
+                          onClick={async () => {
+                            const label = (doc.file_name || '').trim() || `Document #${doc.id}`
+                            const ok = window.confirm(`Delete uploaded document "${label}"?`)
+                            if (!ok) return
+                            await deleteDocumentWithFeedback(doc.id, label)
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
+                  {unassignedDocs.length > 5 && (
+                    <p className="muted">+{unassignedDocs.length - 5} more documents available in Intake page.</p>
+                  )}
+                </div>
+              )}
+            </article>
+          </div>
         </section>
 
         <section className="panel-card rnd-section">
