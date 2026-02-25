@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 from app.models.governance_config import GovernanceConfig
 from app.models.roadmap_plan_item import RoadmapPlanItem
 
-ROLE_KEYS = ("fe", "be", "ai", "pm")
+ROLE_KEYS = ("fe", "be", "ai", "pm", "fs")
 PORTFOLIOS = ("client", "internal")
 WARNING_UTILIZATION_THRESHOLD = 85.0
 EPSILON = 1e-9
@@ -68,6 +68,7 @@ def _weekly_usage(plans: list[RoadmapPlanItem]) -> tuple[dict[str, dict[str, dic
             "be": _safe_non_negative(plan.be_fte),
             "ai": _safe_non_negative(plan.ai_fte),
             "pm": _safe_non_negative(plan.pm_fte),
+            "fs": _safe_non_negative(plan.fs_fte),
         }
         has_demand = any(v > EPSILON for v in role_values.values())
         parsed = _parse_plan_dates(plan.planned_start_date, plan.planned_end_date)
@@ -78,7 +79,7 @@ def _weekly_usage(plans: list[RoadmapPlanItem]) -> tuple[dict[str, dict[str, dic
         start, end = parsed
         portfolio = _norm_portfolio(plan.project_context)
         for wk in _week_keys_between(start, end):
-            slot = usage[portfolio].setdefault(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0})
+            slot = usage[portfolio].setdefault(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0, "fs": 0.0})
             for role in ROLE_KEYS:
                 slot[role] += role_values[role]
     return usage, unscheduled_demand_items

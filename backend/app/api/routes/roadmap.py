@@ -98,6 +98,7 @@ def _snapshot(item: RoadmapItem) -> dict:
         "be_fte": item.be_fte,
         "ai_fte": item.ai_fte,
         "pm_fte": item.pm_fte,
+        "fs_fte": item.fs_fte,
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
         "version_no": item.version_no,
@@ -251,18 +252,19 @@ def _current_usage_weekly(
         start, end = parsed
         portfolio = _norm_portfolio(plan.project_context)
         for wk in _week_keys_between(start, end):
-            slot = usage[portfolio].setdefault(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0})
+            slot = usage[portfolio].setdefault(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0, "fs": 0.0})
             slot["fe"] += _safe_non_negative(plan.fe_fte)
             slot["be"] += _safe_non_negative(plan.be_fte)
             slot["ai"] += _safe_non_negative(plan.ai_fte)
             slot["pm"] += _safe_non_negative(plan.pm_fte)
+            slot["fs"] += _safe_non_negative(plan.fs_fte)
     return usage
 
 
 def _current_usage_pw(db: Session) -> dict[str, dict[str, float]]:
     usage: dict[str, dict[str, float]] = {
-        "client": {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0},
-        "internal": {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0},
+        "client": {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0, "fs": 0.0},
+        "internal": {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0, "fs": 0.0},
     }
     plans = db.query(RoadmapPlanItem).all()
     for plan in plans:
@@ -272,6 +274,7 @@ def _current_usage_pw(db: Session) -> dict[str, dict[str, float]]:
         usage[portfolio]["be"] += _safe_non_negative(plan.be_fte) * duration
         usage[portfolio]["ai"] += _safe_non_negative(plan.ai_fte) * duration
         usage[portfolio]["pm"] += _safe_non_negative(plan.pm_fte) * duration
+        usage[portfolio]["fs"] += _safe_non_negative(plan.fs_fte) * duration
     return usage
 
 
@@ -359,10 +362,10 @@ def _capacity_validate_timeline(
     breach_roles: list[str] = []
     no_capacity_roles: list[str] = []
     breach_weeks: dict[str, str] = {}
-    peak_utilization: dict[str, float] = {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0}
-    no_capacity_breach: dict[str, bool] = {"fe": False, "be": False, "ai": False, "pm": False}
+    peak_utilization: dict[str, float] = {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0, "fs": 0.0}
+    no_capacity_breach: dict[str, bool] = {"fe": False, "be": False, "ai": False, "pm": False, "fs": False}
     for wk in week_keys:
-        existing = usage_weekly[portfolio].get(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0})
+        existing = usage_weekly[portfolio].get(wk, {"fe": 0.0, "be": 0.0, "ai": 0.0, "pm": 0.0, "fs": 0.0})
         for role in ROLE_KEYS:
             cap_weekly = _capacity_limit_weekly(governance, portfolio, role)
             next_fte = existing[role] + _safe_non_negative(proposed.get(role, 0.0))
@@ -662,6 +665,7 @@ def apply_redundancy_decision(
         other_plan.be_fte = primary.be_fte
         other_plan.ai_fte = primary.ai_fte
         other_plan.pm_fte = primary.pm_fte
+        other_plan.fs_fte = primary.fs_fte
         other_plan.priority = primary.priority
         other_plan.project_context = primary.project_context
         other_plan.initiative_type = primary.initiative_type
@@ -1475,10 +1479,11 @@ def move_bucket_items_to_roadmap(
             "be": _safe_non_negative(bucket.be_fte),
             "ai": _safe_non_negative(bucket.ai_fte),
             "pm": _safe_non_negative(bucket.pm_fte),
+            "fs": _safe_non_negative(bucket.fs_fte),
         }
-        if (bucket.fe_fte or 0) < 0 or (bucket.be_fte or 0) < 0 or (bucket.ai_fte or 0) < 0 or (bucket.pm_fte or 0) < 0:
+        if (bucket.fe_fte or 0) < 0 or (bucket.be_fte or 0) < 0 or (bucket.ai_fte or 0) < 0 or (bucket.pm_fte or 0) < 0 or (bucket.fs_fte or 0) < 0:
             raise HTTPException(status_code=400, detail=f"Negative FTE is not allowed for commitment '{bucket.title}'.")
-        if requested["fe"] + requested["be"] + requested["ai"] + requested["pm"] <= 0:
+        if requested["fe"] + requested["be"] + requested["ai"] + requested["pm"] + requested["fs"] <= 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"Set FE/BE/AI/PM resource commitments for '{bucket.title}' before confirming roadmap commitment.",
@@ -1519,6 +1524,7 @@ def move_bucket_items_to_roadmap(
             existing.be_fte = bucket.be_fte
             existing.ai_fte = bucket.ai_fte
             existing.pm_fte = bucket.pm_fte
+            existing.fs_fte = bucket.fs_fte
             existing.accountable_person = bucket.accountable_person
             existing.tentative_duration_weeks = payload.tentative_duration_weeks
             existing.pickup_period = payload.pickup_period.strip()
@@ -1548,6 +1554,7 @@ def move_bucket_items_to_roadmap(
             be_fte=bucket.be_fte,
             ai_fte=bucket.ai_fte,
             pm_fte=bucket.pm_fte,
+            fs_fte=bucket.fs_fte,
             accountable_person=bucket.accountable_person,
             tentative_duration_weeks=payload.tentative_duration_weeks,
             pickup_period=payload.pickup_period.strip(),

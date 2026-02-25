@@ -33,10 +33,12 @@ class GovernanceOut(BaseModel):
     team_be: int
     team_ai: int
     team_pm: int
+    team_fs: int
     efficiency_fe: float
     efficiency_be: float
     efficiency_ai: float
     efficiency_pm: float
+    efficiency_fs: float
     quota_client: float
     quota_internal: float
     team_locked_until: datetime | None = None
@@ -60,10 +62,12 @@ class GovernanceTeamIn(BaseModel):
     team_be: int = 0
     team_ai: int = 0
     team_pm: int = 0
+    team_fs: int = 0
     efficiency_fe: float = 1.0
     efficiency_be: float = 1.0
     efficiency_ai: float = 1.0
     efficiency_pm: float = 1.0
+    efficiency_fs: float = 1.0
 
 
 class GovernanceQuotaIn(BaseModel):

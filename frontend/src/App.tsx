@@ -120,6 +120,7 @@ type RoadmapItem = {
   be_fte: number | null
   ai_fte: number | null
   pm_fte: number | null
+  fs_fte: number | null
   accountable_person: string
   picked_up: boolean
   source_document_id: number | null
@@ -460,6 +461,7 @@ type RoadmapPlanItem = {
   be_fte: number | null
   ai_fte: number | null
   pm_fte: number | null
+  fs_fte: number | null
   accountable_person: string
   entered_roadmap_at: string
   planned_start_date: string
@@ -802,6 +804,7 @@ function App() {
   const [roadmapBeFte, setRoadmapBeFte] = useState('')
   const [roadmapAiFte, setRoadmapAiFte] = useState('')
   const [roadmapPmFte, setRoadmapPmFte] = useState('')
+  const [roadmapFsFte, setRoadmapFsFte] = useState('')
   const [roadmapAccountablePerson, setRoadmapAccountablePerson] = useState('')
   const [roadmapPickedUp, setRoadmapPickedUp] = useState(false)
   const [selectedRoadmapIds, setSelectedRoadmapIds] = useState<number[]>([])
@@ -1243,6 +1246,7 @@ function App() {
       setRoadmapBeFte('')
       setRoadmapAiFte('')
       setRoadmapPmFte('')
+      setRoadmapFsFte('')
       setRoadmapAccountablePerson('')
       setRoadmapPickedUp(false)
       return
@@ -1265,6 +1269,7 @@ function App() {
     setRoadmapBeFte(selectedRoadmapItem.be_fte == null ? '' : String(selectedRoadmapItem.be_fte))
     setRoadmapAiFte(selectedRoadmapItem.ai_fte == null ? '' : String(selectedRoadmapItem.ai_fte))
     setRoadmapPmFte(selectedRoadmapItem.pm_fte == null ? '' : String(selectedRoadmapItem.pm_fte))
+    setRoadmapFsFte(selectedRoadmapItem.fs_fte == null ? '' : String(selectedRoadmapItem.fs_fte))
     setRoadmapAccountablePerson(selectedRoadmapItem.accountable_person || '')
     setRoadmapPickedUp(Boolean(selectedRoadmapItem.picked_up))
   }, [selectedRoadmapItem])
@@ -1666,9 +1671,9 @@ function App() {
     setError('')
     try {
       const duration = item.rnd_timebox_weeks && item.rnd_timebox_weeks > 0 ? item.rnd_timebox_weeks : 4
-      const totalFte = (item.fe_fte || 0) + (item.be_fte || 0) + (item.ai_fte || 0) + (item.pm_fte || 0)
+      const totalFte = (item.fe_fte || 0) + (item.be_fte || 0) + (item.ai_fte || 0) + (item.pm_fte || 0) + (item.fs_fte || 0)
       if (totalFte <= 0) {
-        throw new Error(`Cannot move "${item.title}" to roadmap. Set FE/BE/AI/PM FTE in Commitment Shaping first.`)
+        throw new Error(`Cannot move "${item.title}" to roadmap. Set FE/BE/AI/PM/FS FTE in Commitment Shaping first.`)
       }
       await api<RoadmapItem>(
         `/roadmap/items/${item.id}`,
@@ -1843,6 +1848,7 @@ function App() {
     const parsedBe = Number(roadmapBeFte)
     const parsedAi = Number(roadmapAiFte)
     const parsedPm = Number(roadmapPmFte)
+    const parsedFs = Number(roadmapFsFte)
     return {
       title: roadmapTitle,
       scope: roadmapScope,
@@ -1862,6 +1868,7 @@ function App() {
       be_fte: Number.isFinite(parsedBe) && parsedBe >= 0 ? parsedBe : null,
       ai_fte: Number.isFinite(parsedAi) && parsedAi >= 0 ? parsedAi : null,
       pm_fte: Number.isFinite(parsedPm) && parsedPm >= 0 ? parsedPm : null,
+      fs_fte: Number.isFinite(parsedFs) && parsedFs >= 0 ? parsedFs : null,
       accountable_person: roadmapAccountablePerson,
       picked_up: roadmapPickedUp,
       expected_version_no: selectedRoadmapItem?.version_no ?? 0,
@@ -2588,6 +2595,7 @@ function App() {
     be_fte: number
     ai_fte: number
     pm_fte: number
+    fs_fte: number
     exclude_bucket_item_id?: number
   }) {
     if (!token) throw new Error('Login required')
@@ -6461,6 +6469,7 @@ type RoadmapProps = {
     be_fte: number
     ai_fte: number
     pm_fte: number
+    fs_fte: number
     exclude_bucket_item_id?: number
   }) => Promise<CapacityValidationResult>
   saveRoadmapCandidate: (itemId: number) => Promise<void>
@@ -6557,12 +6566,12 @@ function RoadmapPage({
   const hasDuration = Number.isFinite(Number(roadmapMove.tentative_duration_weeks))
     && Number(roadmapMove.tentative_duration_weeks) > 0
   const hasResourceFte =
-    (Number(roadmapFeFte) || 0) + (Number(roadmapBeFte) || 0) + (Number(roadmapAiFte) || 0) + (Number(roadmapPmFte) || 0) > 0
+    (Number(roadmapFeFte) || 0) + (Number(roadmapBeFte) || 0) + (Number(roadmapAiFte) || 0) + (Number(roadmapPmFte) || 0) + (Number(roadmapFsFte) || 0) > 0
   const capacityApproved = !capacityValidation || capacityValidation.status === 'APPROVED'
   const commitBlockers: string[] = []
   if (!canCommit) commitBlockers.push('Set Readiness to "Ready to commit".')
   if (!hasDuration) commitBlockers.push('Set tentative duration (weeks).')
-  if (!hasResourceFte) commitBlockers.push('Set FE/BE/AI/PM FTE values.')
+  if (!hasResourceFte) commitBlockers.push('Set FE/BE/AI/PM/FS FTE values.')
   if (!capacityApproved) commitBlockers.push(capacityValidation?.reason || 'Capacity is overallocated for one or more roles.')
   const knownOwners = useMemo(() => {
     const owners = roadmapItems.map((item) => item.accountable_person.trim()).filter(Boolean)
@@ -6621,7 +6630,8 @@ function RoadmapPage({
     const be = Number(roadmapBeFte) || 0
     const ai = Number(roadmapAiFte) || 0
     const pm = Number(roadmapPmFte) || 0
-    if (fe + be + ai + pm <= 0) {
+    const fs = Number(roadmapFsFte) || 0
+    if (fe + be + ai + pm + fs <= 0) {
       setCapacityValidation(null)
       setCapacityValidationError('')
       return
@@ -6636,6 +6646,7 @@ function RoadmapPage({
         be_fte: Math.max(0, be),
         ai_fte: Math.max(0, ai),
         pm_fte: Math.max(0, pm),
+        fs_fte: Math.max(0, fs),
         exclude_bucket_item_id: selectedRoadmapItem.id,
       })
         .then((res) => setCapacityValidation(res))
@@ -6653,6 +6664,7 @@ function RoadmapPage({
     roadmapBeFte,
     roadmapAiFte,
     roadmapPmFte,
+    roadmapFsFte,
     validateCapacity,
   ])
 
@@ -6995,7 +7007,7 @@ function RoadmapPage({
                     </select>
                   </label>
                 </div>
-                <div className="split-4">
+                <div className="split-5">
                   <label>
                     FE FTE
                     <input
@@ -7041,6 +7053,18 @@ function RoadmapPage({
                       value={roadmapPmFte}
                       disabled={isLocked || busy}
                       onChange={(e) => setRoadmapPmFte(e.target.value)}
+                      placeholder="0"
+                    />
+                  </label>
+                  <label>
+                    FS FTE
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.25"
+                      value={roadmapFsFte}
+                      disabled={isLocked || busy}
+                      onChange={(e) => setRoadmapFsFte(e.target.value)}
                       placeholder="0"
                     />
                   </label>
@@ -7341,6 +7365,7 @@ type RoadmapAgentProps = {
     be_fte: number
     ai_fte: number
     pm_fte: number
+    fs_fte: number
     exclude_bucket_item_id?: number
   }) => Promise<CapacityValidationResult>
   downloadRoadmapPlanExcel: (filters: {
@@ -7459,7 +7484,7 @@ function RoadmapAgentPage({
 
   const computedTotalFte = useMemo(() => {
     if (!selectedPlan) return 0
-    return Math.max(0, selectedPlan.fe_fte || 0) + Math.max(0, selectedPlan.be_fte || 0) + Math.max(0, selectedPlan.ai_fte || 0) + Math.max(0, selectedPlan.pm_fte || 0)
+    return Math.max(0, selectedPlan.fe_fte || 0) + Math.max(0, selectedPlan.be_fte || 0) + Math.max(0, selectedPlan.ai_fte || 0) + Math.max(0, selectedPlan.pm_fte || 0) + Math.max(0, selectedPlan.fs_fte || 0)
   }, [selectedPlan])
 
   const computedResourceCount = useMemo(() => {
@@ -7502,6 +7527,7 @@ function RoadmapAgentPage({
         be_fte: Math.max(0, selectedPlan.be_fte || 0),
         ai_fte: Math.max(0, selectedPlan.ai_fte || 0),
         pm_fte: Math.max(0, selectedPlan.pm_fte || 0),
+        fs_fte: Math.max(0, selectedPlan.fs_fte || 0),
         exclude_bucket_item_id: selectedPlan.bucket_item_id,
       })
         .then((res) => {
@@ -7520,11 +7546,11 @@ function RoadmapAgentPage({
   const yearlyPlan = useMemo(() => {
     const totalItems = filtered.length
     const totalResources = filtered.reduce((a, i) => {
-      const totalFte = Math.max(0, i.fe_fte || 0) + Math.max(0, i.be_fte || 0) + Math.max(0, i.ai_fte || 0) + Math.max(0, i.pm_fte || 0)
+      const totalFte = Math.max(0, i.fe_fte || 0) + Math.max(0, i.be_fte || 0) + Math.max(0, i.ai_fte || 0) + Math.max(0, i.pm_fte || 0) + Math.max(0, i.fs_fte || 0)
       return a + (totalFte > 0 ? Math.ceil(totalFte) : 0)
     }, 0)
     const totalEffort = filtered.reduce((a, i) => {
-      const totalFte = Math.max(0, i.fe_fte || 0) + Math.max(0, i.be_fte || 0) + Math.max(0, i.ai_fte || 0) + Math.max(0, i.pm_fte || 0)
+      const totalFte = Math.max(0, i.fe_fte || 0) + Math.max(0, i.be_fte || 0) + Math.max(0, i.ai_fte || 0) + Math.max(0, i.pm_fte || 0) + Math.max(0, i.fs_fte || 0)
       const dur = i.tentative_duration_weeks && i.tentative_duration_weeks > 0 ? i.tentative_duration_weeks : 1
       return a + (totalFte > 0 ? Math.ceil(totalFte * dur) : 0)
     }, 0)

@@ -28,6 +28,7 @@ class RoadmapItem(Base):
     be_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     pm_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fs_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     accountable_person: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     picked_up: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id"), nullable=True)

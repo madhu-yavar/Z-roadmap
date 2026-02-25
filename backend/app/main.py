@@ -9,6 +9,9 @@ from app.db.base import Base
 from app.db.session import engine
 from app.models.custom_role import CustomRole  # noqa: F401
 from app.models.enums import UserRole
+from app.models.fte_role import FteRole  # noqa: F401
+from app.models.governance_config_fte import GovernanceConfigFte  # noqa: F401
+from app.models.roadmap_item_fte import RoadmapItemFte, RoadmapPlanItemFte  # noqa: F401
 from app.models.roadmap_movement_request import RoadmapMovementRequest  # noqa: F401
 from app.models.user import User
 from sqlalchemy.orm import Session
@@ -51,6 +54,7 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS be_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS ai_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS pm_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS fs_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS accountable_person VARCHAR(255) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS picked_up BOOLEAN NOT NULL DEFAULT FALSE",
         "ALTER TABLE roadmap_items ADD COLUMN IF NOT EXISTS version_no INTEGER NOT NULL DEFAULT 1",
@@ -67,6 +71,7 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS be_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS ai_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS pm_fte DOUBLE PRECISION",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS fs_fte DOUBLE PRECISION",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS planned_start_date VARCHAR(20) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS planned_end_date VARCHAR(20) NOT NULL DEFAULT ''",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS resource_count INTEGER",
@@ -171,6 +176,8 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS custom_role_id INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_pm INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_fs INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_fs DOUBLE PRECISION NOT NULL DEFAULT 1.0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_until TIMESTAMP",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_by INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS quota_locked_until TIMESTAMP",
@@ -183,6 +190,61 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_locked_at TIMESTAMP",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_locked_by INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS roadmap_lock_note VARCHAR(2000) NOT NULL DEFAULT ''",
+        """
+        CREATE TABLE IF NOT EXISTS fte_roles (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(50) NOT NULL UNIQUE,
+            abbreviation VARCHAR(10) NOT NULL UNIQUE,
+            description VARCHAR(200) NOT NULL DEFAULT '',
+            category VARCHAR(20) NOT NULL DEFAULT 'full_time',
+            default_efficiency_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            color_code VARCHAR(7) NOT NULL DEFAULT '#3B82F6',
+            created_by INTEGER REFERENCES users(id),
+            updated_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_fte_roles_name ON fte_roles (name)",
+        "CREATE INDEX IF NOT EXISTS ix_fte_roles_abbreviation ON fte_roles (abbreviation)",
+        """
+        CREATE TABLE IF NOT EXISTS roadmap_item_fte (
+            id SERIAL PRIMARY KEY,
+            roadmap_item_id INTEGER NOT NULL REFERENCES roadmap_items(id),
+            fte_role_id INTEGER NOT NULL REFERENCES fte_roles(id),
+            fte_value DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_roadmap_item_fte UNIQUE (roadmap_item_id, fte_role_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_item_fte_roadmap_item_id ON roadmap_item_fte (roadmap_item_id)",
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_item_fte_fte_role_id ON roadmap_item_fte (fte_role_id)",
+        """
+        CREATE TABLE IF NOT EXISTS roadmap_plan_item_fte (
+            id SERIAL PRIMARY KEY,
+            roadmap_plan_item_id INTEGER NOT NULL REFERENCES roadmap_plan_items(id),
+            fte_role_id INTEGER NOT NULL REFERENCES fte_roles(id),
+            fte_value DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_roadmap_plan_item_fte UNIQUE (roadmap_plan_item_id, fte_role_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_plan_item_fte_roadmap_plan_item_id ON roadmap_plan_item_fte (roadmap_plan_item_id)",
+        "CREATE INDEX IF NOT EXISTS ix_roadmap_plan_item_fte_fte_role_id ON roadmap_plan_item_fte (fte_role_id)",
+        """
+        CREATE TABLE IF NOT EXISTS governance_config_fte (
+            id SERIAL PRIMARY KEY,
+            governance_config_id INTEGER NOT NULL REFERENCES governance_configs(id),
+            fte_role_id INTEGER NOT NULL REFERENCES fte_roles(id),
+            team_size INTEGER NOT NULL DEFAULT 0,
+            efficiency_factor DOUBLE PRECISION NOT NULL DEFAULT 1.0,
+            CONSTRAINT uq_governance_fte UNIQUE (governance_config_id, fte_role_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_governance_config_fte_governance_config_id ON governance_config_fte (governance_config_id)",
+        "CREATE INDEX IF NOT EXISTS ix_governance_config_fte_fte_role_id ON governance_config_fte (fte_role_id)",
     ]
     with engine.begin() as conn:
         for stmt in statements:
@@ -224,7 +286,20 @@ def _ensure_admin_user() -> None:
         db.commit()
 
 
+def _ensure_fte_roles() -> None:
+    from app.services.fte_role_service import seed_default_fte_roles
+
+    with Session(engine) as db:
+        # Check if any FTE roles exist
+        from app.models.fte_role import FteRole
+
+        existing_count = db.query(FteRole).count()
+        if existing_count == 0:
+            seed_default_fte_roles(db)
+
+
 _ensure_admin_user()
+_ensure_fte_roles()
 
 app = FastAPI(title=settings.APP_NAME)
 

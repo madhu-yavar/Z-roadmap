@@ -20,6 +20,7 @@ from app.schemas.settings import (
     LLMConfigOut,
     LLMTestOut,
 )
+from app.services.fte_role_service import migrate_existing_fte_data, seed_default_fte_roles
 from app.services.llm_client import test_llm_connection
 from app.services.project_document_builder import (
     generate_enterprise_project_document,
@@ -255,3 +256,33 @@ def download_project_document(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/fte_roles/seed", response_model=dict[str, str])
+def seed_fte_roles_endpoint(
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.CEO])),
+    db: Session = Depends(get_db),
+) -> dict[str, str]:
+    """Seed default FTE roles (Admin/CEO only)."""
+    try:
+        seed_default_fte_roles(db)
+        return {"status": "success", "message": "Default FTE roles seeded successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to seed FTE roles: {str(e)}")
+
+
+@router.post("/fte_roles/migrate", response_model=dict[str, int | str])
+def migrate_fte_data_endpoint(
+    current_user: User = Depends(require_roles([UserRole.ADMIN, UserRole.CEO])),
+    db: Session = Depends(get_db),
+) -> dict[str, int | str]:
+    """Migrate existing FTE data to dynamic system (Admin/CEO only)."""
+    try:
+        summary = migrate_existing_fte_data(db)
+        return {
+            "status": "success",
+            "message": "FTE data migration completed",
+            **summary,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to migrate FTE data: {str(e)}")

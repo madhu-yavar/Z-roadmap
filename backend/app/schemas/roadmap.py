@@ -23,6 +23,7 @@ class RoadmapItemOut(BaseModel):
     be_fte: float | None
     ai_fte: float | None
     pm_fte: float | None
+    fs_fte: float | None
     accountable_person: str
     picked_up: bool
     source_document_id: int | None
@@ -51,6 +52,7 @@ class RoadmapItemUpdateIn(BaseModel):
     be_fte: float | None
     ai_fte: float | None
     pm_fte: float | None
+    fs_fte: float | None
     accountable_person: str
     picked_up: bool
     expected_version_no: int
@@ -92,6 +94,7 @@ class RoadmapPlanOut(BaseModel):
     be_fte: float | None
     ai_fte: float | None
     pm_fte: float | None
+    fs_fte: float | None
     accountable_person: str
     entered_roadmap_at: datetime
     planned_start_date: str
@@ -131,6 +134,7 @@ class CapacityValidateIn(BaseModel):
     be_fte: float = 0.0
     ai_fte: float = 0.0
     pm_fte: float = 0.0
+    fs_fte: float = 0.0
     exclude_bucket_item_id: int | None = None
 
 

@@ -29,6 +29,7 @@ class RoadmapPlanItem(Base):
     be_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     ai_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     pm_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fs_fte: Mapped[float | None] = mapped_column(Float, nullable=True)
     accountable_person: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     entered_roadmap_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     planned_start_date: Mapped[str] = mapped_column(String(20), default="", nullable=False)

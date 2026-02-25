@@ -1,6 +1,7 @@
 from app.models.document import Document
 from app.models.custom_role import CustomRole
 from app.models.feature import Feature
+from app.models.fte_role import FteRole
 from app.models.governance_config import GovernanceConfig
 from app.models.intake_analysis import IntakeAnalysis
 from app.models.intake_item import IntakeItem
@@ -9,6 +10,7 @@ from app.models.llm_config import LLMConfig
 from app.models.project import Project
 from app.models.roadmap_item import RoadmapItem
 from app.models.roadmap_movement_request import RoadmapMovementRequest
+from app.models.roadmap_plan_item import RoadmapPlanItem
 from app.models.roadmap_redundancy_decision import RoadmapRedundancyDecision
 from app.models.roadmap_item_version import RoadmapItemVersion
 from app.models.user import User
@@ -19,11 +21,13 @@ __all__ = [
     "Feature",
     "Document",
     "CustomRole",
+    "FteRole",
     "GovernanceConfig",
     "IntakeAnalysis",
     "IntakeItem",
     "IntakeItemVersion",
     "RoadmapItem",
+    "RoadmapPlanItem",
     "RoadmapMovementRequest",
     "RoadmapRedundancyDecision",
     "RoadmapItemVersion",

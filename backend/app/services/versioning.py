@@ -44,6 +44,7 @@ ROADMAP_KEYS = [
     "be_fte",
     "ai_fte",
     "pm_fte",
+    "fs_fte",
     "accountable_person",
     "picked_up",
 ]

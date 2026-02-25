@@ -95,6 +95,7 @@ def _snapshot_roadmap(item: RoadmapItem) -> dict:
         "be_fte": item.be_fte,
         "ai_fte": item.ai_fte,
         "pm_fte": item.pm_fte,
+        "fs_fte": item.fs_fte,
         "accountable_person": item.accountable_person,
         "picked_up": item.picked_up,
         "version_no": item.version_no,

@@ -21,6 +21,7 @@ type RoadmapPlanItem = {
   be_fte: number | null
   ai_fte: number | null
   pm_fte: number | null
+  fs_fte: number | null
   accountable_person: string
   entered_roadmap_at: string
   planned_start_date: string
@@ -126,7 +127,8 @@ export function DetailedRoadmap({ roadmapPlanItems, governanceConfig, busy }: De
         const beFte = Math.max(0, item.be_fte || 0)
         const aiFte = Math.max(0, item.ai_fte || 0)
         const pmFte = Math.max(0, item.pm_fte || 0)
-        const totalFte = feFte + beFte + aiFte + pmFte
+        const fsFte = Math.max(0, item.fs_fte || 0)
+        const totalFte = feFte + beFte + aiFte + pmFte + fsFte
         const resources = totalFte > 0 ? Math.ceil(totalFte) : 0
         const effort = Math.round(totalFte * durationWeeks * 10) / 10
         const totalWeeks = durationWeeks
