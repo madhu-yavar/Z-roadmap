@@ -3,7 +3,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_admin_user, get_current_user
+from app.api.deps import get_current_user, require_roles
+from app.models.enums import UserRole
 from app.models.fte_role import FteRole
 from app.models.user import User
 from app.schemas.fte_role import (
@@ -59,7 +60,7 @@ def get_fte_role(
 @router.post("/", response_model=FteRoleOut, status_code=status.HTTP_201_CREATED)
 def create_fte_role(
     role_in: FteRoleIn,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(lambda db: None),
 ) -> FteRole:
     """Create a new FTE role (Admin only)."""
@@ -94,7 +95,7 @@ def create_fte_role(
 def update_fte_role(
     role_id: int,
     role_update: FteRoleUpdateIn,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(lambda db: None),
 ) -> FteRole:
     """Update an FTE role (Admin only)."""
@@ -119,7 +120,7 @@ def update_fte_role(
 @router.delete("/{role_id}", response_model=FteRoleOut)
 def delete_fte_role(
     role_id: int,
-    current_user: User = Depends(get_current_admin_user),
+    current_user: User = Depends(require_roles(UserRole.ADMIN)),
     db: Session = Depends(lambda db: None),
 ) -> FteRole:
     """Deactivate an FTE role (Admin only)."""
