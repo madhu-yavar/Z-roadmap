@@ -8286,178 +8286,161 @@ function SettingsPage({
   }, [newUserRole, newUserCustomRoleId, assignableCreateCustomRoles])
 
   return (
-    <main className="page-wrap" style={{ background: '#F8FAFC', minHeight: '100vh', padding: '2rem' }}>
-      <section style={{ maxWidth: '1400px', margin: '0 auto' }}>
+    <main className="page-wrap" style={{ background: '#FFFFFF', minHeight: '100vh', padding: '0' }}>
+      <div style={{ maxWidth: '1600px', margin: '0 auto', padding: '40px 48px' }}>
         {/* Page Header */}
-        <div style={{ marginBottom: '2rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#6366F1' }}>
+        <div style={{ marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#2563EB' }}>
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               <path d="M9 12l2 2 4-4"/>
             </svg>
-            <h1 style={{ fontSize: '2rem', fontWeight: 600, margin: 0, color: '#1E293B' }}>Commitment Governance</h1>
+            <h1 style={{ fontSize: '28px', fontWeight: 600, margin: 0, color: '#0F172A', letterSpacing: '-0.02em' }}>Commitment Governance</h1>
           </div>
-          <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0, maxWidth: '600px' }}>
-            Configure team capacity and portfolio quotas. PM commitments are automatically validated against these governance parameters.
+          <p style={{ fontSize: '14px', color: '#64748B', margin: 0 }}>
+            Configure team capacity and portfolio quotas. PM commitments are automatically validated against these parameters.
           </p>
-          <div style={{ height: '1px', background: '#E2E8F0', margin: '1.5rem 0' }} />
         </div>
 
-        {/* Two-Column Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-          {/* Left Panel: Team Capacity */}
-          <div style={{ background: 'white', borderRadius: '16px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #E2E8F0' }}>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: '0 0 0.5rem 0', color: '#1E293B' }}>Team Capacity</h2>
-              <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Configure team size and efficiency factors per role</p>
+        {/* Main Grid: 65% / 35% */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.86fr 1fr', gap: '24px', marginBottom: '24px' }}>
+          {/* Left: Team Capacity Table */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px 0', color: '#0F172A' }}>Team Capacity</h2>
+              <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Size and efficiency per role</p>
             </div>
 
-            {/* Role Cards Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-              {[
-                { role: 'FE', team: teamFe, setTeam: setTeamFe, eff: effFe, setEff: setEffFe },
-                { role: 'BE', team: teamBe, setTeam: setTeamBe, eff: effBe, setEff: setEffBe },
-                { role: 'AI', team: teamAi, setTeam: setTeamAi, eff: effAi, setEff: setEffAi },
-                { role: 'PM', team: teamPm, setTeam: setTeamPm, eff: effPm, setEff: setEffPm },
-                { role: 'FS', team: teamFs, setTeam: setTeamFs, eff: effFs, setEff: setEffFs },
-              ].map(({ role, team, setTeam, eff, setEff }) => (
-                <div key={role} style={{ background: '#F8FAFC', borderRadius: '12px', padding: '1rem', border: '1px solid #E2E8F0' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366F1', marginBottom: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{role}</div>
-                  <div style={{ marginBottom: '0.75rem' }}>
-                    <label style={{ fontSize: '0.75rem', color: '#64748B', display: 'block', marginBottom: '0.25rem' }}>Members</label>
-                    <input
-                      type="number"
-                      min={TEAM_SIZE_MIN}
-                      value={team}
-                      disabled={!canEditTeam || busy || isTeamLockActive}
-                      onChange={(e) => setTeam(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem',
-                        fontSize: '1rem',
-                        fontWeight: 600,
-                        border: '1px solid #CBD5E1',
-                        borderRadius: '8px',
-                        background: 'white',
-                        textAlign: 'center',
-                      }}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.75rem', color: '#64748B', display: 'block', marginBottom: '0.25rem' }}>Efficiency</label>
-                    <input
-                      type="number"
-                      min={EFFICIENCY_MIN}
-                      max={EFFICIENCY_MAX}
-                      step="0.05"
-                      value={eff}
-                      disabled={!canEditTeam || busy || isTeamLockActive}
-                      onChange={(e) => setEff(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '0.5rem',
-                        fontSize: '0.875rem',
-                        border: '1px solid #CBD5E1',
-                        borderRadius: '8px',
-                        background: 'white',
-                        textAlign: 'center',
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
+            {/* Compact Table */}
+            <div style={{ marginBottom: '16px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid #E2E8F0' }}>
+                    <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Role</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Members</th>
+                    <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Efficiency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    { role: 'FE', team: teamFe, setTeam: setTeamFe, eff: effFe, setEff: setEffFe },
+                    { role: 'BE', team: teamBe, setTeam: setTeamBe, eff: effBe, setEff: setEffBe },
+                    { role: 'AI', team: teamAi, setTeam: setTeamAi, eff: effAi, setEff: setEffAi },
+                    { role: 'PM', team: teamPm, setTeam: setTeamPm, eff: effPm, setEff: setEffPm },
+                    { role: 'FS', team: teamFs, setTeam: setTeamFs, eff: effFs, setEff: setEffFs },
+                  ].map(({ role, team, setTeam, eff, setEff }) => (
+                    <tr key={role} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '12px', fontWeight: 600, color: '#2563EB', fontSize: '13px' }}>{role}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min={TEAM_SIZE_MIN}
+                          value={team}
+                          disabled={!canEditTeam || busy || isTeamLockActive}
+                          onChange={(e) => setTeam(e.target.value)}
+                          style={{
+                            width: '70px',
+                            padding: '6px 8px',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '6px',
+                            background: '#FFFFFF',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>
+                        <input
+                          type="number"
+                          min={EFFICIENCY_MIN}
+                          max={EFFICIENCY_MAX}
+                          step="0.05"
+                          value={eff}
+                          disabled={!canEditTeam || busy || isTeamLockActive}
+                          onChange={(e) => setEff(e.target.value)}
+                          style={{
+                            width: '70px',
+                            padding: '6px 8px',
+                            fontSize: '14px',
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '6px',
+                            background: '#FFFFFF',
+                            textAlign: 'center',
+                          }}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            {/* Info Banner */}
-            <div style={{ background: '#EFF6FF', border: '1px solid #DBEAFE', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#3B82F6', flexShrink: 0 }}>
-                <circle cx="12" cy="12" r="10"/>
-                <path d="M12 16v-4"/>
-                <path d="M12 8h.01"/>
-              </svg>
-              <span style={{ fontSize: '0.875rem', color: '#1E40AF' }}>
-                Team size minimum: <strong>{TEAM_SIZE_MIN}</strong> | Efficiency range: <strong>{EFFICIENCY_MIN.toFixed(2)} – {EFFICIENCY_MAX.toFixed(2)}</strong>
-              </span>
-            </div>
-
-            {/* Validation Messages */}
-            {(teamSizeInvalid || efficiencyInvalid) && !isTeamLockActive && (
-              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#EF4444', flexShrink: 0 }}>
-                  <circle cx="12" cy="12" r="10"/>
-                  <path d="M12 8v4"/>
-                  <path d="M12 16h.01"/>
-                </svg>
-                <span style={{ fontSize: '0.875rem', color: '#991B1B' }}>
-                  {teamSizeInvalid
-                    ? `All team sizes must be at least ${TEAM_SIZE_MIN}`
-                    : `Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}`}
-                </span>
+            {/* Info/Validation */}
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', marginBottom: '16px' }}>
+              <div style={{ fontSize: '12px', color: '#64748B', padding: '4px 0' }}>
+                Min: {TEAM_SIZE_MIN} | Eff: {EFFICIENCY_MIN.toFixed(2)}-{EFFICIENCY_MAX.toFixed(2)}
               </div>
-            )}
+              {(teamSizeInvalid || efficiencyInvalid) && !isTeamLockActive && (
+                <div style={{ fontSize: '12px', color: '#DC2626', fontWeight: 500 }}>
+                  {teamSizeInvalid ? 'Team sizes must meet minimum' : 'Efficiency out of range'}
+                </div>
+              )}
+            </div>
 
             {isTeamLockActive && (
-              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#EF4444', flexShrink: 0 }}>
-                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                  </svg>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#991B1B' }}>Team Capacity Locked</span>
-                </div>
-                <p style={{ fontSize: '0.875rem', color: '#991B1B', margin: '0.25rem 0 0 1.5rem' }}>
-                  Locked until {fmtDateTime(governanceConfig?.team_locked_until || '')} ({fmtDuration(teamLockedUntilMs - nowMs)} remaining)
-                </p>
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '10px 12px', marginBottom: '16px', fontSize: '13px', color: '#991B1B' }}>
+                <strong>Locked</strong> until {fmtDateTime(governanceConfig?.team_locked_until || '')} ({fmtDuration(teamLockedUntilMs - nowMs)} remaining)
               </div>
             )}
 
-            <button
-              style={{
-                width: '100%',
-                padding: '0.75rem 1.5rem',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                color: 'white',
-                background: !canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid ? '#94A3B8' : '#6366F1',
-                border: 'none',
-                borderRadius: '8px',
-                cursor: (!canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid) ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
-              }}
-              type="button"
-              disabled={!canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid}
-              onClick={() =>
-                void saveGovernanceTeamConfig({
-                  team_fe: teamFe,
-                  team_be: teamBe,
-                  team_ai: teamAi,
-                  team_pm: teamPm,
-                  team_fs: teamFs,
-                  efficiency_fe: effFe,
-                  efficiency_be: effBe,
-                  efficiency_ai: effAi,
-                  efficiency_pm: effPm,
-                  efficiency_fs: effFs,
-                })
-              }
-            >
-              {busy ? 'Saving...' : 'Save Team Capacity'}
-            </button>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: 'white',
+                  background: !canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid ? '#94A3B8' : '#2563EB',
+                  border: 'none',
+                  borderRadius: '6px',
+                  cursor: (!canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid) ? 'not-allowed' : 'pointer',
+                }}
+                type="button"
+                disabled={!canEditTeam || busy || isTeamLockActive || teamSizeInvalid || efficiencyInvalid}
+                onClick={() =>
+                  void saveGovernanceTeamConfig({
+                    team_fe: teamFe,
+                    team_be: teamBe,
+                    team_ai: teamAi,
+                    team_pm: teamPm,
+                    team_fs: teamFs,
+                    efficiency_fe: effFe,
+                    efficiency_be: effBe,
+                    efficiency_ai: effAi,
+                    efficiency_pm: effPm,
+                    efficiency_fs: effFs,
+                  })
+                }
+              >
+                {busy ? 'Saving...' : 'Save Team Capacity'}
+              </button>
+            </div>
           </div>
 
-          {/* Right Panel: Portfolio Quotas */}
-          <div style={{ background: 'white', borderRadius: '16px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #E2E8F0' }}>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, margin: '0 0 0.5rem 0', color: '#1E293B' }}>Portfolio Quotas</h2>
-              <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Allocate weekly FTE quota per portfolio</p>
+          {/* Right: Portfolio Allocation */}
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px 0', color: '#0F172A' }}>Portfolio Allocation</h2>
+              <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Weekly FTE quota per portfolio</p>
             </div>
 
-            {/* Quota Sliders */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.875rem', fontWeight: 500, color: '#334155' }}>Client Portfolio</label>
-                  <span style={{ fontSize: '1.125rem', fontWeight: 700, color: '#6366F1' }}>{quotaTotal.toFixed(2)}</span>
+            {/* Single source of truth: slider + synced input */}
+            <div style={{ marginBottom: '20px' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>Client Portfolio</label>
+                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#2563EB', fontFamily: 'monospace' }}>{Number(quotaClient).toFixed(2)}</span>
                 </div>
                 <input
                   type="range"
@@ -8473,34 +8456,16 @@ function SettingsPage({
                     borderRadius: '3px',
                     background: '#E2E8F0',
                     outline: 'none',
+                    appearance: 'none',
                     cursor: (!canEditQuotas || busy || isQuotaLockActive) ? 'not-allowed' : 'pointer',
-                  }}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step="0.01"
-                  value={quotaClient}
-                  disabled={!canEditQuotas || busy || isQuotaLockActive}
-                  onChange={(e) => setQuotaClient(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    marginTop: '0.5rem',
-                    fontSize: '0.875rem',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: '6px',
-                    background: 'white',
-                    textAlign: 'center',
                   }}
                 />
               </div>
 
-              <div style={{ marginBottom: '1.5rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                  <label style={{ fontSize: '0.875rem', fontWeight: 500, color: '#334155' }}>Internal Portfolio</label>
-                  <span style={{ fontSize: '1.125rem', fontWeight: 700, color: '#8B5CF6' }}>{quotaInternal}</span>
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>Internal Portfolio</label>
+                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#7C3AED', fontFamily: 'monospace' }}>{Number(quotaInternal).toFixed(2)}</span>
                 </div>
                 <input
                   type="range"
@@ -8516,88 +8481,50 @@ function SettingsPage({
                     borderRadius: '3px',
                     background: '#E2E8F0',
                     outline: 'none',
+                    appearance: 'none',
                     cursor: (!canEditQuotas || busy || isQuotaLockActive) ? 'not-allowed' : 'pointer',
-                  }}
-                />
-                <input
-                  type="number"
-                  min={0}
-                  max={1}
-                  step="0.01"
-                  value={quotaInternal}
-                  disabled={!canEditQuotas || busy || isQuotaLockActive}
-                  onChange={(e) => setQuotaInternal(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.5rem',
-                    marginTop: '0.5rem',
-                    fontSize: '0.875rem',
-                    border: '1px solid #CBD5E1',
-                    borderRadius: '6px',
-                    background: 'white',
-                    textAlign: 'center',
                   }}
                 />
               </div>
 
-              {/* Total Validation */}
+              {/* Total - Single source of truth validation */}
               <div style={{
-                background: quotaTotalInvalid ? '#FEF2F2' : '#F0FDF4',
-                border: quotaTotalInvalid ? '1px solid #FECACA' : '1px solid #BBF7D0',
-                borderRadius: '8px',
-                padding: '0.75rem 1rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem',
+                padding: '12px',
+                borderRadius: '6px',
+                background: quotaTotalInvalid ? '#FEF2F2' : quotaTotal === 1 ? '#F0FDF4' : '#FEF9C3',
+                border: `1px solid ${quotaTotalInvalid ? '#FECACA' : quotaTotal === 1 ? '#BBF7D0' : '#FDE68A'}`,
+                textAlign: 'center',
               }}>
-                {quotaTotalInvalid ? (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#EF4444', flexShrink: 0 }}>
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M12 8v4"/>
-                    <path d="M12 16h.01"/>
-                  </svg>
-                ) : (
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#22C55E', flexShrink: 0 }}>
-                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                    <path d="m9 11 3 3L22 4"/>
-                  </svg>
-                )}
-                <span style={{ fontSize: '0.875rem', color: quotaTotalInvalid ? '#991B1B' : '#166534' }}>
-                  {quotaTotalInvalid
-                    ? `Total must be ≤ 1.00 (currently ${quotaTotal.toFixed(2)})`
-                    : `Quota allocation valid: ${quotaTotal.toFixed(2)}`
-                  }
-                </span>
+                <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '4px', color: '#475569' }}>Total Allocation</div>
+                <div style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'monospace', color: quotaTotalInvalid ? '#DC2626' : quotaTotal === 1 ? '#166534' : '#B45309' }}>
+                  {quotaTotal.toFixed(2)}
+                  <span style={{ fontSize: '14px', fontWeight: 500, marginLeft: '8px', color: '#64748B' }}>
+                    {quotaTotalInvalid ? '❌ Exceeds limit' : quotaTotal === 1 ? '✓ Valid' : '⚠ Below limit'}
+                  </span>
+                </div>
+                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
+                  Must equal 1.00 (100%)
+                </div>
               </div>
             </div>
 
             {isQuotaLockActive && (
-              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#EF4444', flexShrink: 0 }}>
-                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                  </svg>
-                  <span style={{ fontSize: '0.875rem', fontWeight: 600, color: '#991B1B' }}>Portfolio Quotas Locked</span>
-                </div>
-                <p style={{ fontSize: '0.875rem', color: '#991B1B', margin: '0.25rem 0 0 1.5rem' }}>
-                  Locked until {fmtDateTime(governanceConfig?.quota_locked_until || '')} ({fmtDuration(quotaLockedUntilMs - nowMs)} remaining)
-                </p>
+              <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '10px 12px', marginBottom: '16px', fontSize: '13px', color: '#991B1B' }}>
+                <strong>Locked</strong> until {fmtDateTime(governanceConfig?.quota_locked_until || '')} ({fmtDuration(quotaLockedUntilMs - nowMs)} remaining)
               </div>
             )}
 
             <button
               style={{
                 width: '100%',
-                padding: '0.75rem 1.5rem',
-                fontSize: '0.875rem',
+                padding: '10px 20px',
+                fontSize: '14px',
                 fontWeight: 600,
                 color: 'white',
-                background: !canEditQuotas || busy || quotaTotalInvalid || isQuotaLockActive ? '#94A3B8' : '#8B5CF6',
+                background: !canEditQuotas || busy || quotaTotalInvalid || isQuotaLockActive ? '#94A3B8' : '#7C3AED',
                 border: 'none',
-                borderRadius: '8px',
+                borderRadius: '6px',
                 cursor: (!canEditQuotas || busy || quotaTotalInvalid || isQuotaLockActive) ? 'not-allowed' : 'pointer',
-                transition: 'all 0.2s',
               }}
               type="button"
               disabled={!canEditQuotas || busy || quotaTotalInvalid || isQuotaLockActive}
@@ -8608,65 +8535,86 @@ function SettingsPage({
                 })
               }
             >
-              {busy ? 'Saving...' : 'Save Portfolio Quotas'}
+              {busy ? 'Saving...' : 'Save Quotas'}
             </button>
           </div>
         </div>
 
-        {/* Capacity Utilization Preview */}
+        {/* Capacity Utilization: Dense KPI Row */}
         {governanceConfig && (
-          <div style={{ background: 'white', borderRadius: '16px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #E2E8F0', marginBottom: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.125rem', fontWeight: 600, margin: '0 0 0.25rem 0', color: '#1E293B' }}>Capacity Utilization Preview</h2>
-                <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>Real-time capacity overview across all roles</p>
-              </div>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: '#94A3B8', cursor: 'pointer' }}>
-                <circle cx="12" cy="12" r="1"/>
-                <circle cx="19" cy="12" r="1"/>
-                <circle cx="5" cy="12" r="1"/>
-              </svg>
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px', marginBottom: '24px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px 0', color: '#0F172A' }}>Capacity Overview</h2>
+              <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Weekly capacity by role (members × efficiency × 40h)</p>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem' }}>
-              {[
-                { role: 'FE', size: governanceConfig.team_fe, eff: governanceConfig.efficiency_fe },
-                { role: 'BE', size: governanceConfig.team_be, eff: governanceConfig.efficiency_be },
-                { role: 'AI', size: governanceConfig.team_ai, eff: governanceConfig.efficiency_ai },
-                { role: 'PM', size: governanceConfig.team_pm, eff: governanceConfig.efficiency_pm },
-                { role: 'FS', size: governanceConfig.team_fs || 0, eff: governanceConfig.efficiency_fs || 1 },
-              ].map(({ role, size, eff }) => {
-                const weeklyCapacity = Math.round(size * eff * 40)
-                return (
-                  <div key={role} style={{ padding: '1rem', background: '#F8FAFC', borderRadius: '8px', border: '1px solid #E2E8F0' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#6366F1', marginBottom: '0.5rem', textTransform: 'uppercase' }}>{role}</div>
-                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1E293B', marginBottom: '0.25rem' }}>{weeklyCapacity}h</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748B' }}>{size} members × {eff} eff</div>
-                  </div>
-                )
-              })}
-            </div>
+
+            {/* Dense KPI Table */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid #E2E8F0' }}>
+                  <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Role</th>
+                  <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Members</th>
+                  <th style={{ padding: '10px 16px', textAlign: 'center', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Efficiency</th>
+                  <th style={{ padding: '10px 16px', textAlign: 'right', fontWeight: 600, color: '#475569', fontSize: '13px' }}>Weekly Hours</th>
+                  <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#475569', fontSize: '13px', width: '40%' }}>Utilization</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { role: 'FE', size: governanceConfig.team_fe, eff: governanceConfig.efficiency_fe, color: '#2563EB' },
+                  { role: 'BE', size: governanceConfig.team_be, eff: governanceConfig.efficiency_be, color: '#7C3AED' },
+                  { role: 'AI', size: governanceConfig.team_ai, eff: governanceConfig.efficiency_ai, color: '#DB2777' },
+                  { role: 'PM', size: governanceConfig.team_pm, eff: governanceConfig.efficiency_pm, color: '#059669' },
+                  { role: 'FS', size: governanceConfig.team_fs || 0, eff: governanceConfig.efficiency_fs || 1, color: '#D97706' },
+                ].map(({ role, size, eff, color }) => {
+                  const weeklyHours = Math.round(size * eff * 40)
+                  const utilization = eff * 100
+                  return (
+                    <tr key={role} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                      <td style={{ padding: '12px 16px', fontWeight: 600, color: color, fontSize: '13px' }}>{role}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'center', color: '#0F172A' }}>{size}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'center', color: '#0F172A' }}>{eff.toFixed(2)}</td>
+                      <td style={{ padding: '12px 16px', textAlign: 'right', fontFamily: 'monospace', fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>
+                        {weeklyHours}h
+                      </td>
+                      <td style={{ padding: '12px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ flex: 1, height: '8px', background: '#F1F5F9', borderRadius: '4px', overflow: 'hidden' }}>
+                            <div style={{ width: `${utilization}%`, height: '100%', background: color, borderRadius: '4px' }} />
+                          </div>
+                          <span style={{ fontSize: '13px', fontWeight: 600, color: '#64748B', minWidth: '45px', textAlign: 'right' }}>
+                            {utilization.toFixed(0)}%
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+
         {isEfficiencyConfirmer && (
-          <div style={{ background: 'white', borderRadius: '16px', padding: '1.5rem', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid #E2E8F0' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+          <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h2 style={{ fontSize: '1.125rem', fontWeight: 600, margin: '0 0 0.25rem 0', color: '#1E293B' }}>Monthly Efficiency Confirmation</h2>
-                <p style={{ fontSize: '0.875rem', color: '#64748B', margin: 0 }}>{currentUserRole} confirmation required</p>
+                <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px 0', color: '#0F172A' }}>Monthly Efficiency Confirmation</h2>
+                <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>{currentUserRole} confirmation required</p>
               </div>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: confirmationDue ? '#EF4444' : '#22C55E' }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: confirmationDue ? '#DC2626' : '#16A34A' }}>
                 <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                 <path d="m9 11 3 3L22 4"/>
               </svg>
             </div>
             <div style={{
+              padding: '12px',
+              borderRadius: '6px',
               background: confirmationDue ? '#FEF2F2' : '#F0FDF4',
-              border: confirmationDue ? '1px solid #FECACA' : '1px solid #BBF7D0',
-              borderRadius: '8px',
-              padding: '0.75rem 1rem',
-              marginBottom: '1rem',
+              border: `1px solid ${confirmationDue ? '#FECACA' : '#BBF7D0'}`,
+              marginBottom: '16px',
             }}>
-              <p style={{ fontSize: '0.875rem', color: confirmationDue ? '#991B1B' : '#166534', margin: 0 }}>
+              <p style={{ fontSize: '13px', color: confirmationDue ? '#991B1B' : '#166534', margin: 0 }}>
                 {roleConfirmationAt
                   ? `Last confirmation: ${fmtDateTime(roleConfirmationAt)}`
                   : 'No confirmation recorded yet for this role.'}
@@ -8678,9 +8626,8 @@ function SettingsPage({
               disabled={busy}
               onClick={() => void confirmGovernanceEfficiency()}
               style={{
-                width: 'auto',
-                padding: '0.75rem 1.5rem',
-                fontSize: '0.875rem',
+                padding: '10px 20px',
+                fontSize: '14px',
                 fontWeight: 600,
               }}
             >
@@ -8688,9 +8635,9 @@ function SettingsPage({
             </button>
           </div>
         )}
-      </section>
+      </div>
 
-      <section className="panel-card settings-section">
+      <section className="panel-card settings-section" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px', marginBottom: '24px' }}>
         <h2>Roles, Rights, Responsibilities</h2>
         <p className="muted">Role scope and responsibilities are enforced by backend RBAC checks.</p>
         {rolePolicies.length === 0 ? (
