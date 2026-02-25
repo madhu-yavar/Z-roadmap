@@ -2984,6 +2984,8 @@ function App() {
               setRoadmapAiFte={setRoadmapAiFte}
               roadmapPmFte={roadmapPmFte}
               setRoadmapPmFte={setRoadmapPmFte}
+              roadmapFsFte={roadmapFsFte}
+              setRoadmapFsFte={setRoadmapFsFte}
               roadmapAccountablePerson={roadmapAccountablePerson}
               setRoadmapAccountablePerson={setRoadmapAccountablePerson}
               setRoadmapPickedUp={setRoadmapPickedUp}
@@ -6440,6 +6442,8 @@ type RoadmapProps = {
   setRoadmapAiFte: Dispatch<SetStateAction<string>>
   roadmapPmFte: string
   setRoadmapPmFte: Dispatch<SetStateAction<string>>
+  roadmapFsFte: string
+  setRoadmapFsFte: Dispatch<SetStateAction<string>>
   roadmapAccountablePerson: string
   setRoadmapAccountablePerson: Dispatch<SetStateAction<string>>
   setRoadmapPickedUp: Dispatch<SetStateAction<boolean>>
@@ -6519,6 +6523,8 @@ function RoadmapPage({
   setRoadmapAiFte,
   roadmapPmFte,
   setRoadmapPmFte,
+  roadmapFsFte,
+  setRoadmapFsFte,
   roadmapAccountablePerson,
   setRoadmapAccountablePerson,
   setRoadmapPickedUp,
