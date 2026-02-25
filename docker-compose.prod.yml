@@ -1,14 +1,14 @@
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: zroadmap-postgres
-    restart: unless-stopped
+    container_name: roadmap-postgres
     environment:
       POSTGRES_DB: roadmap_agent
       POSTGRES_USER: roadmap
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-roadmap}
+      POSTGRES_PASSWORD: roadmap
     volumes:
       - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U roadmap -d roadmap_agent"]
       interval: 10s
@@ -18,44 +18,35 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: zroadmap-backend
-    restart: unless-stopped
+      dockerfile: Dockerfile
+    container_name: roadmap-backend
+    environment:
+      DATABASE_URL: postgresql://roadmap:roadmap@postgres:5432/roadmap_agent
+      CORS_ORIGINS: https://z-roadmap.yavar.ai,http://localhost:5173
+    volumes:
+      - ./backend/storage:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
-    environment:
-      APP_NAME: Z- Roadmap
-      APP_ENV: prod
-      SECRET_KEY: ${SECRET_KEY}
-      ACCESS_TOKEN_EXPIRE_MINUTES: 120
-      DATABASE_URL: postgresql+psycopg2://roadmap:${POSTGRES_PASSWORD:-roadmap}@postgres:5432/roadmap_agent
-      FILE_STORAGE_PATH: /app/storage/uploads
-      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://127.0.0.1}
-      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-False}
-      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
-      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-}
-      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/service-account.json}
-      ADMIN_BOOTSTRAP_NAME: ${ADMIN_BOOTSTRAP_NAME:-Platform Admin}
-      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
-      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
-    volumes:
-      - backend_uploads:/app/storage/uploads
-      - ./secrets:/run/secrets:ro
-    ports:
-      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   frontend:
     build:
       context: ./frontend
+      dockerfile: Dockerfile
       args:
         VITE_API_BASE: /api
-    container_name: zroadmap-frontend
-    restart: unless-stopped
+    container_name: roadmap-frontend
+    ports:
+      - "80:80"
     depends_on:
       - backend
-    ports:
-      - "${FRONTEND_PORT:-80}:80"
+    restart: unless-stopped
 
 volumes:
   pgdata:
-  backend_uploads:
