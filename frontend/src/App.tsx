@@ -7025,9 +7025,9 @@ function RoadmapPage({
                     </select>
                   </label>
                 </div>
-                <div className="split-5">
+                <div className="split-3">
                   <label>
-                    FE FTE
+                    FE
                     <input
                       type="number"
                       min={0}
@@ -7035,11 +7035,11 @@ function RoadmapPage({
                       value={roadmapFeFte}
                       disabled={isLocked || busy}
                       onChange={(e) => setRoadmapFeFte(e.target.value)}
-                      placeholder="0"
+                      placeholder="FTE"
                     />
                   </label>
                   <label>
-                    BE FTE
+                    BE
                     <input
                       type="number"
                       min={0}
@@ -7047,11 +7047,11 @@ function RoadmapPage({
                       value={roadmapBeFte}
                       disabled={isLocked || busy}
                       onChange={(e) => setRoadmapBeFte(e.target.value)}
-                      placeholder="0"
+                      placeholder="FTE"
                     />
                   </label>
                   <label>
-                    AI FTE
+                    AI
                     <input
                       type="number"
                       min={0}
@@ -7059,11 +7059,13 @@ function RoadmapPage({
                       value={roadmapAiFte}
                       disabled={isLocked || busy}
                       onChange={(e) => setRoadmapAiFte(e.target.value)}
-                      placeholder="0"
+                      placeholder="FTE"
                     />
                   </label>
+                </div>
+                <div className="split-2">
                   <label>
-                    PM FTE
+                    PM
                     <input
                       type="number"
                       min={0}
@@ -7071,11 +7073,11 @@ function RoadmapPage({
                       value={roadmapPmFte}
                       disabled={isLocked || busy}
                       onChange={(e) => setRoadmapPmFte(e.target.value)}
-                      placeholder="0"
+                      placeholder="FTE"
                     />
                   </label>
                   <label>
-                    FS FTE
+                    FS
                     <input
                       type="number"
                       min={0}
@@ -7083,7 +7085,7 @@ function RoadmapPage({
                       value={roadmapFsFte}
                       disabled={isLocked || busy}
                       onChange={(e) => setRoadmapFsFte(e.target.value)}
-                      placeholder="0"
+                      placeholder="FTE"
                     />
                   </label>
                 </div>
@@ -8296,88 +8298,43 @@ function SettingsPage({
         <div className="split-2">
           <div className="stack">
             <h3>Team Capacity (CEO)</h3>
-            <div className="split-5">
+            <div className="split-3">
               <label>
-                FE Team Size
-                <input type="number" min={TEAM_SIZE_MIN} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} />
+                FE
+                <div className="split-2">
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} placeholder="Size" />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffFe(e.target.value)} placeholder="Eff." />
+                </div>
               </label>
               <label>
-                BE Team Size
-                <input type="number" min={TEAM_SIZE_MIN} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} />
+                BE
+                <div className="split-2">
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} placeholder="Size" />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffBe(e.target.value)} placeholder="Eff." />
+                </div>
               </label>
               <label>
-                AI Team Size
-                <input type="number" min={TEAM_SIZE_MIN} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} />
-              </label>
-              <label>
-                PM Team Size
-                <input type="number" min={TEAM_SIZE_MIN} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} />
-              </label>
-              <label>
-                FS Team Size
-                <input type="number" min={TEAM_SIZE_MIN} value={teamFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFs(e.target.value)} />
+                AI
+                <div className="split-2">
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} placeholder="Size" />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffAi(e.target.value)} placeholder="Eff." />
+                </div>
               </label>
             </div>
-            <div className="split-5">
+            <div className="split-2">
               <label>
-                FE Efficiency
-                <input
-                  type="number"
-                  min={EFFICIENCY_MIN}
-                  max={EFFICIENCY_MAX}
-                  step="0.05"
-                  value={effFe}
-                  disabled={!canEditTeam || busy || isTeamLockActive}
-                  onChange={(e) => setEffFe(e.target.value)}
-                />
+                PM
+                <div className="split-2">
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} placeholder="Size" />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffPm(e.target.value)} placeholder="Eff." />
+                </div>
               </label>
               <label>
-                BE Efficiency
-                <input
-                  type="number"
-                  min={EFFICIENCY_MIN}
-                  max={EFFICIENCY_MAX}
-                  step="0.05"
-                  value={effBe}
-                  disabled={!canEditTeam || busy || isTeamLockActive}
-                  onChange={(e) => setEffBe(e.target.value)}
-                />
-              </label>
-              <label>
-                AI Efficiency
-                <input
-                  type="number"
-                  min={EFFICIENCY_MIN}
-                  max={EFFICIENCY_MAX}
-                  step="0.05"
-                  value={effAi}
-                  disabled={!canEditTeam || busy || isTeamLockActive}
-                  onChange={(e) => setEffAi(e.target.value)}
-                />
-              </label>
-              <label>
-                PM Efficiency
-                <input
-                  type="number"
-                  min={EFFICIENCY_MIN}
-                  max={EFFICIENCY_MAX}
-                  step="0.05"
-                  value={effPm}
-                  disabled={!canEditTeam || busy || isTeamLockActive}
-                  onChange={(e) => setEffPm(e.target.value)}
-                />
-              </label>
-              <label>
-                FS Efficiency
-                <input
-                  type="number"
-                  min={EFFICIENCY_MIN}
-                  max={EFFICIENCY_MAX}
-                  step="0.05"
-                  value={effFs}
-                  disabled={!canEditTeam || busy || isTeamLockActive}
-                  onChange={(e) => setEffFs(e.target.value)}
-                />
+                FS
+                <div className="split-2">
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFs(e.target.value)} placeholder="Size" />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffFs(e.target.value)} placeholder="Eff." />
+                </div>
               </label>
             </div>
             <p className="muted">
