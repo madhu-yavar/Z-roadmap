@@ -163,10 +163,12 @@ type GovernanceConfig = {
   team_be: number
   team_ai: number
   team_pm: number
+  team_fs: number
   efficiency_fe: number
   efficiency_be: number
   efficiency_ai: number
   efficiency_pm: number
+  efficiency_fs: number
   quota_client: number
   quota_internal: number
   team_locked_until: string | null
@@ -191,6 +193,7 @@ type CapacityValidationResult = {
     BE: string
     AI: string
     PM: string
+    FS: string
   }
   reason: string
 }
@@ -598,7 +601,7 @@ function CapacityMeters({
   title: string
   utilization: CapacityValidationResult['utilization_percentage']
 }) {
-  const roles: Array<'FE' | 'BE' | 'AI' | 'PM'> = ['FE', 'BE', 'AI', 'PM']
+  const roles: Array<'FE' | 'BE' | 'AI' | 'PM' | 'FS'> = ['FE', 'BE', 'AI', 'PM', 'FS']
   return (
     <div className="capacity-meter-wrap">
       <div className="line-item">
@@ -648,10 +651,11 @@ type RoleTotals = {
   BE: number
   AI: number
   PM: number
+  FS: number
 }
 
 function emptyRoleTotals(): RoleTotals {
-  return { FE: 0, BE: 0, AI: 0, PM: 0 }
+  return { FE: 0, BE: 0, AI: 0, PM: 0, FS: 0 }
 }
 
 function parseIsoDate(value: string): Date | null {
@@ -671,6 +675,7 @@ function addPlanFte(usage: RoleTotals, plan: RoadmapPlanItem): RoleTotals {
     BE: usage.BE + Math.max(0, plan.be_fte || 0),
     AI: usage.AI + Math.max(0, plan.ai_fte || 0),
     PM: usage.PM + Math.max(0, plan.pm_fte || 0),
+    FS: usage.FS + Math.max(0, plan.fs_fte || 0),
   }
 }
 
@@ -682,12 +687,13 @@ function weeklyCapacityByPortfolio(governanceConfig: GovernanceConfig | null, po
     BE: Math.max(0, governanceConfig.team_be * governanceConfig.efficiency_be * quota),
     AI: Math.max(0, governanceConfig.team_ai * governanceConfig.efficiency_ai * quota),
     PM: Math.max(0, governanceConfig.team_pm * governanceConfig.efficiency_pm * quota),
+    FS: Math.max(0, (governanceConfig.team_fs || 0) * (governanceConfig.efficiency_fs || 1) * quota),
   }
 }
 
 function utilizationFromUsage(usage: RoleTotals, capacity: RoleTotals): CapacityValidationResult['utilization_percentage'] {
-  const roles: Array<keyof RoleTotals> = ['FE', 'BE', 'AI', 'PM']
-  const out: CapacityValidationResult['utilization_percentage'] = { FE: '0.0%', BE: '0.0%', AI: '0.0%', PM: '0.0%' }
+  const roles: Array<keyof RoleTotals> = ['FE', 'BE', 'AI', 'PM', 'FS']
+  const out: CapacityValidationResult['utilization_percentage'] = { FE: '0.0%', BE: '0.0%', AI: '0.0%', PM: '0.0%', FS: '0.0%' }
   for (const role of roles) {
     const used = usage[role]
     const cap = capacity[role]
@@ -2278,33 +2284,37 @@ function App() {
     team_be: string
     team_ai: string
     team_pm: string
+    team_fs: string
     efficiency_fe: string
     efficiency_be: string
     efficiency_ai: string
     efficiency_pm: string
+    efficiency_fs: string
   }) {
     if (!token) return
     const teamFe = Math.max(0, Math.round(toNumberOrZero(payload.team_fe)))
     const teamBe = Math.max(0, Math.round(toNumberOrZero(payload.team_be)))
     const teamAi = Math.max(0, Math.round(toNumberOrZero(payload.team_ai)))
     const teamPm = Math.max(0, Math.round(toNumberOrZero(payload.team_pm)))
-    const minTeam = Math.min(teamFe, teamBe, teamAi, teamPm)
+    const teamFs = Math.max(0, Math.round(toNumberOrZero(payload.team_fs)))
+    const minTeam = Math.min(teamFe, teamBe, teamAi, teamPm, teamFs)
     if (minTeam < TEAM_SIZE_MIN) {
-      setError(`Team size must be at least ${TEAM_SIZE_MIN} for FE, BE, AI, and PM.`)
+      setError(`Team size must be at least ${TEAM_SIZE_MIN} for FE, BE, AI, PM, and FS.`)
       return
     }
     const effFe = Math.max(0, toNumberOrZero(payload.efficiency_fe))
     const effBe = Math.max(0, toNumberOrZero(payload.efficiency_be))
     const effAi = Math.max(0, toNumberOrZero(payload.efficiency_ai))
     const effPm = Math.max(0, toNumberOrZero(payload.efficiency_pm))
-    const minEff = Math.min(effFe, effBe, effAi, effPm)
-    const maxEff = Math.max(effFe, effBe, effAi, effPm)
+    const effFs = Math.max(0, toNumberOrZero(payload.efficiency_fs))
+    const minEff = Math.min(effFe, effBe, effAi, effPm, effFs)
+    const maxEff = Math.max(effFe, effBe, effAi, effPm, effFs)
     if (minEff < EFFICIENCY_MIN || maxEff > EFFICIENCY_MAX) {
       setError(`Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}.`)
       return
     }
     const proceed = window.confirm(
-      `CEO acknowledgement required:\n- Team size must be at least ${TEAM_SIZE_MIN} for FE/BE/AI/PM\n- Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}\n- Save will lock Team Capacity for 3 hours\nContinue?`,
+      `CEO acknowledgement required:\n- Team size must be at least ${TEAM_SIZE_MIN} for FE/BE/AI/PM/FS\n- Efficiency must be between ${EFFICIENCY_MIN.toFixed(2)} and ${EFFICIENCY_MAX.toFixed(2)}\n- Save will lock Team Capacity for 3 hours\nContinue?`,
     )
     if (!proceed) return
     setBusy(true)
@@ -2319,10 +2329,12 @@ function App() {
             team_be: teamBe,
             team_ai: teamAi,
             team_pm: teamPm,
+            team_fs: teamFs,
             efficiency_fe: effFe,
             efficiency_be: effBe,
             efficiency_ai: effAi,
             efficiency_pm: effPm,
+            efficiency_fs: effFs,
           }),
         },
         token,
@@ -8067,10 +8079,12 @@ type SettingsProps = {
     team_be: string
     team_ai: string
     team_pm: string
+    team_fs: string
     efficiency_fe: string
     efficiency_be: string
     efficiency_ai: string
     efficiency_pm: string
+    efficiency_fs: string
   }) => Promise<void>
   saveGovernanceQuotas: (payload: { quota_client: string; quota_internal: string }) => Promise<void>
   confirmGovernanceEfficiency: () => Promise<void>
@@ -8168,6 +8182,8 @@ function SettingsPage({
   const [effBe, setEffBe] = useState('1')
   const [effAi, setEffAi] = useState('1')
   const [effPm, setEffPm] = useState('1')
+  const [teamFs, setTeamFs] = useState('0')
+  const [effFs, setEffFs] = useState('1')
   const [quotaClient, setQuotaClient] = useState('0.5')
   const [quotaInternal, setQuotaInternal] = useState('0.5')
   const [newUserName, setNewUserName] = useState('')
@@ -8196,26 +8212,31 @@ function SettingsPage({
   const teamBeNum = Number(teamBe)
   const teamAiNum = Number(teamAi)
   const teamPmNum = Number(teamPm)
+  const teamFsNum = Number(teamFs)
   const teamSizeInvalid =
     (Number.isFinite(teamFeNum) ? teamFeNum : 0) < TEAM_SIZE_MIN ||
     (Number.isFinite(teamBeNum) ? teamBeNum : 0) < TEAM_SIZE_MIN ||
     (Number.isFinite(teamAiNum) ? teamAiNum : 0) < TEAM_SIZE_MIN ||
-    (Number.isFinite(teamPmNum) ? teamPmNum : 0) < TEAM_SIZE_MIN
+    (Number.isFinite(teamPmNum) ? teamPmNum : 0) < TEAM_SIZE_MIN ||
+    (Number.isFinite(teamFsNum) ? teamFsNum : 0) < TEAM_SIZE_MIN
   const effFeNum = Number(effFe)
   const effBeNum = Number(effBe)
   const effAiNum = Number(effAi)
   const effPmNum = Number(effPm)
+  const effFsNum = Number(effFs)
   const minEffNum = Math.min(
     Number.isFinite(effFeNum) ? effFeNum : 0,
     Number.isFinite(effBeNum) ? effBeNum : 0,
     Number.isFinite(effAiNum) ? effAiNum : 0,
     Number.isFinite(effPmNum) ? effPmNum : 0,
+    Number.isFinite(effFsNum) ? effFsNum : 0,
   )
   const maxEffNum = Math.max(
     Number.isFinite(effFeNum) ? effFeNum : 0,
     Number.isFinite(effBeNum) ? effBeNum : 0,
     Number.isFinite(effAiNum) ? effAiNum : 0,
     Number.isFinite(effPmNum) ? effPmNum : 0,
+    Number.isFinite(effFsNum) ? effFsNum : 0,
   )
   const efficiencyInvalid = minEffNum < EFFICIENCY_MIN || maxEffNum > EFFICIENCY_MAX
   const quotaClientNum = Number(quotaClient)
@@ -8243,10 +8264,12 @@ function SettingsPage({
     setTeamBe(String(governanceConfig.team_be))
     setTeamAi(String(governanceConfig.team_ai))
     setTeamPm(String(governanceConfig.team_pm))
+    setTeamFs(String(governanceConfig.team_fs || 0))
     setEffFe(String(governanceConfig.efficiency_fe))
     setEffBe(String(governanceConfig.efficiency_be))
     setEffAi(String(governanceConfig.efficiency_ai))
     setEffPm(String(governanceConfig.efficiency_pm))
+    setEffFs(String(governanceConfig.efficiency_fs || 1))
     setQuotaClient(String(governanceConfig.quota_client))
     setQuotaInternal(String(governanceConfig.quota_internal))
   }, [governanceConfig])
@@ -8273,7 +8296,7 @@ function SettingsPage({
         <div className="split-2">
           <div className="stack">
             <h3>Team Capacity (CEO)</h3>
-            <div className="split-4">
+            <div className="split-5">
               <label>
                 FE Team Size
                 <input type="number" min={TEAM_SIZE_MIN} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} />
@@ -8290,8 +8313,12 @@ function SettingsPage({
                 PM Team Size
                 <input type="number" min={TEAM_SIZE_MIN} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} />
               </label>
+              <label>
+                FS Team Size
+                <input type="number" min={TEAM_SIZE_MIN} value={teamFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFs(e.target.value)} />
+              </label>
             </div>
-            <div className="split-4">
+            <div className="split-5">
               <label>
                 FE Efficiency
                 <input
@@ -8340,6 +8367,18 @@ function SettingsPage({
                   onChange={(e) => setEffPm(e.target.value)}
                 />
               </label>
+              <label>
+                FS Efficiency
+                <input
+                  type="number"
+                  min={EFFICIENCY_MIN}
+                  max={EFFICIENCY_MAX}
+                  step="0.05"
+                  value={effFs}
+                  disabled={!canEditTeam || busy || isTeamLockActive}
+                  onChange={(e) => setEffFs(e.target.value)}
+                />
+              </label>
             </div>
             <p className="muted">
               Team size minimum: {TEAM_SIZE_MIN}. Efficiency range: {EFFICIENCY_MIN.toFixed(2)} to {EFFICIENCY_MAX.toFixed(2)}.
@@ -8367,10 +8406,12 @@ function SettingsPage({
                   team_be: teamBe,
                   team_ai: teamAi,
                   team_pm: teamPm,
+                  team_fs: teamFs,
                   efficiency_fe: effFe,
                   efficiency_be: effBe,
                   efficiency_ai: effAi,
                   efficiency_pm: effPm,
+                  efficiency_fs: effFs,
                 })
               }
             >

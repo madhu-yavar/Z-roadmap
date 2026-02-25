@@ -19,7 +19,15 @@
       "Bash(tr:*)",
       "Bash(python3:*)",
       "Bash(git checkout:*)",
-      "Bash(docker compose up:*)"
+      "Bash(docker compose up:*)",
+      "Bash(timeout:*)",
+      "Bash(pkill:*)",
+      "Bash(\"/Users/yavar/Documents/CoE/Roadmap Agent/docker-compose.prod.yml\":*)",
+      "Bash(\"/Users/yavar/Documents/CoE/Roadmap Agent/deploy.sh\":*)",
+      "Bash(__NEW_LINE_21e0572b6a6a2e70__ chmod +x \"/Users/yavar/Documents/CoE/Roadmap Agent/deploy.sh\")",
+      "Bash(docker compose:*)",
+      "Bash(docker exec:*)",
+      "Bash(ssh:*)"
     ]
   }
 }
