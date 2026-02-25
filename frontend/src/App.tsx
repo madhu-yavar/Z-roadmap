@@ -7025,7 +7025,7 @@ function RoadmapPage({
                     </select>
                   </label>
                 </div>
-                <div className="split-3">
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '0.75rem' }}>
                   <label>
                     FE
                     <input
@@ -7062,8 +7062,6 @@ function RoadmapPage({
                       placeholder="FTE"
                     />
                   </label>
-                </div>
-                <div className="split-2">
                   <label>
                     PM
                     <input
@@ -8298,44 +8296,42 @@ function SettingsPage({
         <div className="split-2">
           <div className="stack">
             <h3>Team Capacity (CEO)</h3>
-            <div className="split-3">
-              <label>
-                FE
-                <div className="split-2">
-                  <input type="number" min={TEAM_SIZE_MIN} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} placeholder="Size" />
-                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffFe(e.target.value)} placeholder="Eff." />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem' }}>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>FE</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFe(e.target.value)} placeholder="Size" style={{ flex: 1 }} />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effFe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffFe(e.target.value)} placeholder="Eff." style={{ flex: 1 }} />
                 </div>
-              </label>
-              <label>
-                BE
-                <div className="split-2">
-                  <input type="number" min={TEAM_SIZE_MIN} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} placeholder="Size" />
-                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffBe(e.target.value)} placeholder="Eff." />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>BE</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamBe(e.target.value)} placeholder="Size" style={{ flex: 1 }} />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effBe} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffBe(e.target.value)} placeholder="Eff." style={{ flex: 1 }} />
                 </div>
-              </label>
-              <label>
-                AI
-                <div className="split-2">
-                  <input type="number" min={TEAM_SIZE_MIN} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} placeholder="Size" />
-                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffAi(e.target.value)} placeholder="Eff." />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>AI</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamAi(e.target.value)} placeholder="Size" style={{ flex: 1 }} />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effAi} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffAi(e.target.value)} placeholder="Eff." style={{ flex: 1 }} />
                 </div>
-              </label>
-            </div>
-            <div className="split-2">
-              <label>
-                PM
-                <div className="split-2">
-                  <input type="number" min={TEAM_SIZE_MIN} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} placeholder="Size" />
-                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffPm(e.target.value)} placeholder="Eff." />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>PM</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamPm(e.target.value)} placeholder="Size" style={{ flex: 1 }} />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effPm} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffPm(e.target.value)} placeholder="Eff." style={{ flex: 1 }} />
                 </div>
-              </label>
-              <label>
-                FS
-                <div className="split-2">
-                  <input type="number" min={TEAM_SIZE_MIN} value={teamFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFs(e.target.value)} placeholder="Size" />
-                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffFs(e.target.value)} placeholder="Eff." />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.85rem', fontWeight: 500, marginBottom: '0.25rem', display: 'block' }}>FS</label>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input type="number" min={TEAM_SIZE_MIN} value={teamFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setTeamFs(e.target.value)} placeholder="Size" style={{ flex: 1 }} />
+                  <input type="number" min={EFFICIENCY_MIN} max={EFFICIENCY_MAX} step="0.05" value={effFs} disabled={!canEditTeam || busy || isTeamLockActive} onChange={(e) => setEffFs(e.target.value)} placeholder="Eff." style={{ flex: 1 }} />
                 </div>
-              </label>
+              </div>
             </div>
             <p className="muted">
               Team size minimum: {TEAM_SIZE_MIN}. Efficiency range: {EFFICIENCY_MIN.toFixed(2)} to {EFFICIENCY_MAX.toFixed(2)}.

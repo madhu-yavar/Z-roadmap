@@ -27,7 +27,10 @@
       "Bash(__NEW_LINE_21e0572b6a6a2e70__ chmod +x \"/Users/yavar/Documents/CoE/Roadmap Agent/deploy.sh\")",
       "Bash(docker compose:*)",
       "Bash(docker exec:*)",
-      "Bash(ssh:*)"
+      "Bash(ssh:*)",
+      "Bash(gzip:*)",
+      "Bash(scp:*)",
+      "Bash(ls:*)"
     ]
   }
 }
