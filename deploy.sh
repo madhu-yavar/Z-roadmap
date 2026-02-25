@@ -22,9 +22,9 @@ docker compose -f docker-compose.prod.yml up -d
 echo "⏳ Waiting for backend to start..."
 sleep 10
 
-# Check backend health
+# Check backend health (through nginx proxy)
 echo "🔍 Checking backend health..."
-if curl -f http://localhost:8000/health > /dev/null 2>&1; then
+if curl -f http://localhost/api/health > /dev/null 2>&1; then
     echo "✅ Backend is healthy!"
 else
     echo "❌ Backend health check failed!"
