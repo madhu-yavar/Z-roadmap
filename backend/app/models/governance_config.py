@@ -20,8 +20,37 @@ class GovernanceConfig(Base):
     efficiency_ai: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     efficiency_pm: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     efficiency_fs: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+
+    # Legacy global quotas (deprecated, kept for backward compatibility)
     quota_client: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
     quota_internal: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+
+    # Per-role portfolio quotas (NEW - supports 3-way splits)
+    # FE quotas
+    quota_fe_client: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_fe_internal: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_fe_rnd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # BE quotas
+    quota_be_client: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_be_internal: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_be_rnd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # AI quotas
+    quota_ai_client: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_ai_internal: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_ai_rnd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # PM quotas
+    quota_pm_client: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_pm_internal: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    quota_pm_rnd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
+    # FS quotas
+    quota_fs_client: Mapped[float] = mapped_column(Float, default=0.3, nullable=False)
+    quota_fs_internal: Mapped[float] = mapped_column(Float, default=0.7, nullable=False)
+    quota_fs_rnd: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
     team_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     team_locked_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     quota_locked_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

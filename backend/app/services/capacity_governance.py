@@ -6,13 +6,16 @@ from app.models.governance_config import GovernanceConfig
 from app.models.roadmap_plan_item import RoadmapPlanItem
 
 ROLE_KEYS = ("fe", "be", "ai", "pm", "fs")
-PORTFOLIOS = ("client", "internal")
+PORTFOLIOS = ("client", "internal", "rnd")
 WARNING_UTILIZATION_THRESHOLD = 85.0
 EPSILON = 1e-9
 
 
 def _norm_portfolio(value: str) -> str:
     low = (value or "").strip().lower()
+    # Support legacy "rnd" as "rnd" portfolio
+    if low in ("rnd", "research", "research & development"):
+        return "rnd"
     return low if low in PORTFOLIOS else "internal"
 
 
@@ -49,12 +52,23 @@ def _parse_plan_dates(start_date: str, end_date: str) -> tuple[datetime, datetim
 
 
 def _weekly_capacity(cfg: GovernanceConfig) -> dict[str, dict[str, float]]:
-    out: dict[str, dict[str, float]] = {"client": {}, "internal": {}}
+    out: dict[str, dict[str, float]] = {"client": {}, "internal": {}, "rnd": {}}
     for portfolio in PORTFOLIOS:
-        quota = float(cfg.quota_client if portfolio == "client" else cfg.quota_internal)
         for role in ROLE_KEYS:
             team = float(getattr(cfg, f"team_{role}") or 0.0)
             efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+            # Use per-role quota if available, otherwise fall back to legacy global quota
+            quota_attr = f"quota_{role}_{portfolio}"
+            if hasattr(cfg, quota_attr):
+                quota = float(getattr(cfg, quota_attr) or 0.0)
+            else:
+                # Legacy fallback: use global quota
+                if portfolio == "client":
+                    quota = float(cfg.quota_client)
+                elif portfolio == "internal":
+                    quota = float(cfg.quota_internal)
+                else:  # rnd
+                    quota = 0.0
             out[portfolio][role] = max(0.0, team * efficiency * quota)
     return out
 

@@ -116,8 +116,14 @@ def _assert_expected_version(entity_label: str, current_version: int, expected_v
         )
 
 
+PORTFOLIOS = ("client", "internal", "rnd")
+
+
 def _norm_portfolio(value: str) -> str:
     low = (value or "").strip().lower()
+    # Support "rnd" project context
+    if low in ("rnd", "research", "research & development"):
+        return "rnd"
     return low if low in PORTFOLIOS else "internal"
 
 
@@ -148,7 +154,18 @@ def _capacity_limit_pw(cfg: GovernanceConfig, portfolio: str, role: str) -> floa
 def _capacity_limit_weekly(cfg: GovernanceConfig, portfolio: str, role: str) -> float:
     team = float(getattr(cfg, f"team_{role}") or 0)
     efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
-    quota = float(cfg.quota_client if portfolio == "client" else cfg.quota_internal)
+    # Use per-role quota if available
+    quota_attr = f"quota_{role}_{portfolio}"
+    if hasattr(cfg, quota_attr):
+        quota = float(getattr(cfg, quota_attr) or 0.0)
+    else:
+        # Legacy fallback
+        if portfolio == "client":
+            quota = float(cfg.quota_client)
+        elif portfolio == "internal":
+            quota = float(cfg.quota_internal)
+        else:  # rnd
+            quota = 0.0
     return max(0.0, team * efficiency * quota)
 
 
@@ -352,7 +369,7 @@ def _capacity_validate_timeline(
         return (
             "REJECTED",
             [],
-            {"FE": "0.0%", "BE": "0.0%", "AI": "0.0%", "PM": "0.0%"},
+            {"FE": "0.0%", "BE": "0.0%", "AI": "0.0%", "PM": "0.0%", "FS": "0.0%"},
             "Invalid planned date range. Use YYYY-MM-DD and ensure end date is not before start date.",
         )
     start, end = parsed
@@ -1409,8 +1426,8 @@ def validate_capacity(
     if not governance:
         return CapacityValidateOut(
             status="REJECTED",
-            breach_roles=["FE", "BE", "AI", "PM"],
-            utilization_percentage={"FE": "0.0%", "BE": "0.0%", "AI": "0.0%", "PM": "0.0%"},
+            breach_roles=["FE", "BE", "AI", "PM", "FS"],
+            utilization_percentage={"FE": "0.0%", "BE": "0.0%", "AI": "0.0%", "PM": "0.0%", "FS": "0.0%"},
             reason="Governance configuration missing. CEO/VP must configure capacity first.",
         )
 
@@ -1420,6 +1437,8 @@ def validate_capacity(
         "fe": _safe_non_negative(payload.fe_fte),
         "be": _safe_non_negative(payload.be_fte),
         "ai": _safe_non_negative(payload.ai_fte),
+        "pm": _safe_non_negative(payload.pm_fte),
+        "fs": _safe_non_negative(payload.fs_fte),
         "pm": _safe_non_negative(payload.pm_fte),
     }
     if payload.planned_start_date.strip() and payload.planned_end_date.strip():

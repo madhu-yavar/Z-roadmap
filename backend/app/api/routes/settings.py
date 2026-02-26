@@ -176,13 +176,41 @@ def update_governance_quotas(
             status_code=423,
             detail=f"Portfolio quotas are locked until {cfg.quota_locked_until.isoformat()}",
         )
-    if payload.quota_client < 0 or payload.quota_internal < 0:
-        raise HTTPException(status_code=400, detail="Quota cannot be negative")
-    if payload.quota_client + payload.quota_internal > 1.0 + 1e-9:
-        raise HTTPException(status_code=400, detail="Portfolio quotas cannot exceed 1.0 combined")
 
-    cfg.quota_client = payload.quota_client
-    cfg.quota_internal = payload.quota_internal
+    # Validate each role's quotas sum to 1.0
+    for role in ["fe", "be", "ai", "pm", "fs"]:
+        client_quota = getattr(payload, f"quota_{role}_client")
+        internal_quota = getattr(payload, f"quota_{role}_internal")
+        rnd_quota = getattr(payload, f"quota_{role}_rnd")
+        total = client_quota + internal_quota + rnd_quota
+        if abs(total - 1.0) > 1e-9:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{role.upper()} portfolio quotas must sum to 1.0 (currently {total:.2f}). Adjust Client+Internal+R&D to equal 1.0."
+            )
+        if min(client_quota, internal_quota, rnd_quota) < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{role.upper()} portfolio quotas cannot be negative"
+            )
+
+    # Save all per-role quotas
+    cfg.quota_fe_client = payload.quota_fe_client
+    cfg.quota_fe_internal = payload.quota_fe_internal
+    cfg.quota_fe_rnd = payload.quota_fe_rnd
+    cfg.quota_be_client = payload.quota_be_client
+    cfg.quota_be_internal = payload.quota_be_internal
+    cfg.quota_be_rnd = payload.quota_be_rnd
+    cfg.quota_ai_client = payload.quota_ai_client
+    cfg.quota_ai_internal = payload.quota_ai_internal
+    cfg.quota_ai_rnd = payload.quota_ai_rnd
+    cfg.quota_pm_client = payload.quota_pm_client
+    cfg.quota_pm_internal = payload.quota_pm_internal
+    cfg.quota_pm_rnd = payload.quota_pm_rnd
+    cfg.quota_fs_client = payload.quota_fs_client
+    cfg.quota_fs_internal = payload.quota_fs_internal
+    cfg.quota_fs_rnd = payload.quota_fs_rnd
+
     cfg.quota_locked_until = datetime.utcnow() + timedelta(hours=LOCK_WINDOW_HOURS)
     cfg.quota_locked_by = current_user.id
     cfg.updated_by = current_user.id

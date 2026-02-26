@@ -41,6 +41,22 @@ class GovernanceOut(BaseModel):
     efficiency_fs: float
     quota_client: float
     quota_internal: float
+    # Per-role quotas
+    quota_fe_client: float = 0.5
+    quota_fe_internal: float = 0.5
+    quota_fe_rnd: float = 0.0
+    quota_be_client: float = 0.5
+    quota_be_internal: float = 0.5
+    quota_be_rnd: float = 0.0
+    quota_ai_client: float = 0.5
+    quota_ai_internal: float = 0.5
+    quota_ai_rnd: float = 0.0
+    quota_pm_client: float = 0.5
+    quota_pm_internal: float = 0.5
+    quota_pm_rnd: float = 0.0
+    quota_fs_client: float = 0.3
+    quota_fs_internal: float = 0.7
+    quota_fs_rnd: float = 0.0
     team_locked_until: datetime | None = None
     team_locked_by: int | None = None
     quota_locked_until: datetime | None = None
@@ -71,5 +87,19 @@ class GovernanceTeamIn(BaseModel):
 
 
 class GovernanceQuotaIn(BaseModel):
-    quota_client: float = 0.5
-    quota_internal: float = 0.5
+    # Per-role portfolio quotas (supports 3-way split)
+    quota_fe_client: float = 0.5
+    quota_fe_internal: float = 0.5
+    quota_fe_rnd: float = 0.0
+    quota_be_client: float = 0.5
+    quota_be_internal: float = 0.5
+    quota_be_rnd: float = 0.0
+    quota_ai_client: float = 0.5
+    quota_ai_internal: float = 0.5
+    quota_ai_rnd: float = 0.0
+    quota_pm_client: float = 0.5
+    quota_pm_internal: float = 0.5
+    quota_pm_rnd: float = 0.0
+    quota_fs_client: float = 0.3
+    quota_fs_internal: float = 0.7
+    quota_fs_rnd: float = 0.0
