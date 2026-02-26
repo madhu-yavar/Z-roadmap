@@ -171,6 +171,22 @@ type GovernanceConfig = {
   efficiency_fs: number
   quota_client: number
   quota_internal: number
+  // Per-role portfolio quotas
+  quota_fe_client: number
+  quota_fe_internal: number
+  quota_fe_rnd: number
+  quota_be_client: number
+  quota_be_internal: number
+  quota_be_rnd: number
+  quota_ai_client: number
+  quota_ai_internal: number
+  quota_ai_rnd: number
+  quota_pm_client: number
+  quota_pm_internal: number
+  quota_pm_rnd: number
+  quota_fs_client: number
+  quota_fs_internal: number
+  quota_fs_rnd: number
   team_locked_until: string | null
   team_locked_by: number | null
   quota_locked_until: string | null
@@ -2348,16 +2364,30 @@ function App() {
     }
   }
 
-  async function saveGovernanceQuotas(payload: { quota_client: string; quota_internal: string }) {
+  async function saveGovernanceQuotas(
+    _payload: { quota_client: string; quota_internal: string },
+    perRoleQuotas: {
+      FE: { client: number; internal: number; rnd: number }
+      BE: { client: number; internal: number; rnd: number }
+      AI: { client: number; internal: number; rnd: number }
+      PM: { client: number; internal: number; rnd: number }
+      FS: { client: number; internal: number; rnd: number }
+    },
+  ) {
     if (!token) return
-    const quotaClient = Math.max(0, toNumberOrZero(payload.quota_client))
-    const quotaInternal = Math.max(0, toNumberOrZero(payload.quota_internal))
-    if (quotaClient + quotaInternal > 1.0 + 1e-9) {
-      setError('Invalid quota allocation: Client + Internal must be less than or equal to 1.00.')
-      return
+
+    // Validate all per-role quotas sum to 1.0
+    for (const role of ['FE', 'BE', 'AI', 'PM', 'FS'] as const) {
+      const roleData = perRoleQuotas[role]
+      const total = roleData.client + roleData.internal + roleData.rnd
+      if (Math.abs(total - 1.0) > 0.01) {
+        setError(`${role} portfolio quotas must sum to 1.0 (currently ${total.toFixed(2)}). Adjust Client+Internal+R&D to equal 1.0.`)
+        return
+      }
     }
+
     const proceed = window.confirm(
-      'VP/CEO acknowledgement required:\n- Total quota must be <= 1.00\n- Save will lock Portfolio Quotas for 3 hours\nContinue?',
+      'VP/CEO acknowledgement required:\n- Each role\'s portfolio quotas must sum to 1.0\n- Save will lock Portfolio Quotas for 3 hours\nContinue?',
     )
     if (!proceed) return
     setBusy(true)
@@ -2368,8 +2398,21 @@ function App() {
         {
           method: 'POST',
           body: JSON.stringify({
-            quota_client: quotaClient,
-            quota_internal: quotaInternal,
+            quota_fe_client: perRoleQuotas.FE.client,
+            quota_fe_internal: perRoleQuotas.FE.internal,
+            quota_fe_rnd: perRoleQuotas.FE.rnd,
+            quota_be_client: perRoleQuotas.BE.client,
+            quota_be_internal: perRoleQuotas.BE.internal,
+            quota_be_rnd: perRoleQuotas.BE.rnd,
+            quota_ai_client: perRoleQuotas.AI.client,
+            quota_ai_internal: perRoleQuotas.AI.internal,
+            quota_ai_rnd: perRoleQuotas.AI.rnd,
+            quota_pm_client: perRoleQuotas.PM.client,
+            quota_pm_internal: perRoleQuotas.PM.internal,
+            quota_pm_rnd: perRoleQuotas.PM.rnd,
+            quota_fs_client: perRoleQuotas.FS.client,
+            quota_fs_internal: perRoleQuotas.FS.internal,
+            quota_fs_rnd: perRoleQuotas.FS.rnd,
           }),
         },
         token,
@@ -8471,7 +8514,16 @@ type SettingsProps = {
     efficiency_pm: string
     efficiency_fs: string
   }) => Promise<void>
-  saveGovernanceQuotas: (payload: { quota_client: string; quota_internal: string }) => Promise<void>
+  saveGovernanceQuotas: (
+    payload: { quota_client: string; quota_internal: string },
+    perRoleQuotas: {
+      FE: { client: number; internal: number; rnd: number }
+      BE: { client: number; internal: number; rnd: number }
+      AI: { client: number; internal: number; rnd: number }
+      PM: { client: number; internal: number; rnd: number }
+      FS: { client: number; internal: number; rnd: number }
+    },
+  ) => Promise<void>
   confirmGovernanceEfficiency: () => Promise<void>
   createPlatformUser: (payload: {
     full_name: string
@@ -8571,6 +8623,22 @@ function SettingsPage({
   const [effFs, setEffFs] = useState('1')
   const [quotaClient, setQuotaClient] = useState('0.5')
   const [quotaInternal, setQuotaInternal] = useState('0.5')
+
+  // Per-role portfolio quotas state
+  const [perRoleQuotas, setPerRoleQuotas] = useState<{
+    FE: { client: number; internal: number; rnd: number }
+    BE: { client: number; internal: number; rnd: number }
+    AI: { client: number; internal: number; rnd: number }
+    PM: { client: number; internal: number; rnd: number }
+    FS: { client: number; internal: number; rnd: number }
+  }>({
+    FE: { client: 0.5, internal: 0.5, rnd: 0.0 },
+    BE: { client: 0.5, internal: 0.5, rnd: 0.0 },
+    AI: { client: 0.5, internal: 0.5, rnd: 0.0 },
+    PM: { client: 0.5, internal: 0.5, rnd: 0.0 },
+    FS: { client: 0.3, internal: 0.7, rnd: 0.0 },
+  })
+
   const [newUserName, setNewUserName] = useState('')
   const [newUserEmail, setNewUserEmail] = useState('')
   const [newUserPassword, setNewUserPassword] = useState('')
@@ -8643,6 +8711,18 @@ function SettingsPage({
   const confirmationDue = !Number.isFinite(roleConfirmationMs) || roleConfirmationMs <= 0 || nowMs - roleConfirmationMs >= EFFICIENCY_CONFIRM_INTERVAL_MS
   const assignableCreateCustomRoles = customRoles.filter((r) => r.is_active && r.base_role === newUserRole)
 
+  // Helper function to update per-role quota
+  function updatePerRoleQuota(role: 'FE' | 'BE' | 'AI' | 'PM' | 'FS', portfolio: 'client' | 'internal' | 'rnd', value: string) {
+    const numValue = Math.max(0, Math.min(1, Number(value) || 0))
+    setPerRoleQuotas((prev) => ({
+      ...prev,
+      [role]: {
+        ...prev[role],
+        [portfolio]: numValue,
+      },
+    }))
+  }
+
   useEffect(() => {
     if (!governanceConfig) return
     setTeamFe(String(governanceConfig.team_fe))
@@ -8657,6 +8737,35 @@ function SettingsPage({
     setEffFs(String(governanceConfig.efficiency_fs || 1))
     setQuotaClient(String(governanceConfig.quota_client))
     setQuotaInternal(String(governanceConfig.quota_internal))
+
+    // Initialize per-role quotas from governance config
+    setPerRoleQuotas({
+      FE: {
+        client: governanceConfig.quota_fe_client || 0.5,
+        internal: governanceConfig.quota_fe_internal || 0.5,
+        rnd: governanceConfig.quota_fe_rnd || 0.0,
+      },
+      BE: {
+        client: governanceConfig.quota_be_client || 0.5,
+        internal: governanceConfig.quota_be_internal || 0.5,
+        rnd: governanceConfig.quota_be_rnd || 0.0,
+      },
+      AI: {
+        client: governanceConfig.quota_ai_client || 0.5,
+        internal: governanceConfig.quota_ai_internal || 0.5,
+        rnd: governanceConfig.quota_ai_rnd || 0.0,
+      },
+      PM: {
+        client: governanceConfig.quota_pm_client || 0.5,
+        internal: governanceConfig.quota_pm_internal || 0.5,
+        rnd: governanceConfig.quota_pm_rnd || 0.0,
+      },
+      FS: {
+        client: governanceConfig.quota_fs_client || 0.3,
+        internal: governanceConfig.quota_fs_internal || 0.7,
+        rnd: governanceConfig.quota_fs_rnd || 0.0,
+      },
+    })
   }, [governanceConfig])
 
   useEffect(() => {
@@ -8813,85 +8922,162 @@ function SettingsPage({
             </div>
           </div>
 
-          {/* Right: Portfolio Allocation */}
+          {/* Right: Portfolio Allocation - Per Role Quotas */}
           <div style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '8px', padding: '20px' }}>
             <div style={{ marginBottom: '16px' }}>
               <h2 style={{ fontSize: '18px', fontWeight: 600, margin: '0 0 4px 0', color: '#0F172A' }}>Portfolio Allocation</h2>
-              <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Weekly FTE quota per portfolio</p>
+              <p style={{ fontSize: '13px', color: '#64748B', margin: 0 }}>Weekly FTE quota per role and portfolio (each role must sum to 1.0)</p>
             </div>
 
-            {/* Single source of truth: slider + synced input */}
-            <div style={{ marginBottom: '20px' }}>
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>Client Portfolio</label>
-                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#2563EB', fontFamily: 'monospace' }}>{Number(quotaClient).toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step="0.01"
-                  value={quotaClient}
-                  disabled={!canEditQuotas || busy || isQuotaLockActive}
-                  onChange={(e) => setQuotaClient(e.target.value)}
-                  style={{
-                    width: '100%',
-                    height: '6px',
-                    borderRadius: '3px',
-                    background: '#E2E8F0',
-                    outline: 'none',
-                    appearance: 'none',
-                    cursor: (!canEditQuotas || busy || isQuotaLockActive) ? 'not-allowed' : 'pointer',
-                  }}
-                />
-              </div>
+            {/* Per-Role Quota Configuration */}
+            {(['FE', 'BE', 'AI', 'PM', 'FS'] as const).map((role) => {
+              const roleClient = perRoleQuotas[role]?.client || 0.5
+              const roleInternal = perRoleQuotas[role]?.internal || 0.5
+              const roleRnd = perRoleQuotas[role]?.rnd || 0
+              const roleTotal = roleClient + roleInternal + roleRnd
+              const roleValid = Math.abs(roleTotal - 1.0) < 0.01
 
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <label style={{ fontSize: '14px', fontWeight: 500, color: '#334155' }}>Internal Portfolio</label>
-                  <span style={{ fontSize: '20px', fontWeight: 700, color: '#7C3AED', fontFamily: 'monospace' }}>{Number(quotaInternal).toFixed(2)}</span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step="0.01"
-                  value={quotaInternal}
-                  disabled={!canEditQuotas || busy || isQuotaLockActive}
-                  onChange={(e) => setQuotaInternal(e.target.value)}
-                  style={{
-                    width: '100%',
-                    height: '6px',
-                    borderRadius: '3px',
-                    background: '#E2E8F0',
-                    outline: 'none',
-                    appearance: 'none',
-                    cursor: (!canEditQuotas || busy || isQuotaLockActive) ? 'not-allowed' : 'pointer',
-                  }}
-                />
-              </div>
+              return (
+                <div key={role} style={{
+                  marginBottom: '20px',
+                  padding: '16px',
+                  borderRadius: '8px',
+                  border: '1px solid #E5E7EB',
+                  background: roleValid ? '#FFFFFF' : '#FEF2F2'
+                }}>
+                  {/* Role Header */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: 600, color: '#0F172A' }}>{role} Allocation</div>
+                    <div style={{
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      color: roleValid ? '#166534' : '#DC2626',
+                      fontFamily: 'monospace',
+                    }}>
+                      {roleTotal.toFixed(2)} {roleValid ? '✓' : '❌'}
+                    </div>
+                  </div>
 
-              {/* Total - Single source of truth validation */}
-              <div style={{
-                padding: '12px',
-                borderRadius: '6px',
-                background: quotaTotalInvalid ? '#FEF2F2' : quotaTotal === 1 ? '#F0FDF4' : '#FEF9C3',
-                border: `1px solid ${quotaTotalInvalid ? '#FECACA' : quotaTotal === 1 ? '#BBF7D0' : '#FDE68A'}`,
-                textAlign: 'center',
-              }}>
-                <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '4px', color: '#475569' }}>Total Allocation</div>
-                <div style={{ fontSize: '24px', fontWeight: 700, fontFamily: 'monospace', color: quotaTotalInvalid ? '#DC2626' : quotaTotal === 1 ? '#166534' : '#B45309' }}>
-                  {quotaTotal.toFixed(2)}
-                  <span style={{ fontSize: '14px', fontWeight: 500, marginLeft: '8px', color: '#64748B' }}>
-                    {quotaTotalInvalid ? '❌ Exceeds limit' : quotaTotal === 1 ? '✓ Valid' : '⚠ Below limit'}
-                  </span>
+                  {/* 3-Column Quota Inputs */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '12px' }}>
+                    {/* Client */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>Client</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={roleClient}
+                          disabled={!canEditQuotas || busy || isQuotaLockActive}
+                          onChange={(e) => updatePerRoleQuota(role, 'client', e.target.value)}
+                          style={{
+                            width: '60px',
+                            padding: '4px 6px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            borderRadius: '4px',
+                            border: '1px solid #D1D5DB',
+                            textAlign: 'center',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={roleClient}
+                        disabled={!canEditQuotas || busy || isQuotaLockActive}
+                        onChange={(e) => updatePerRoleQuota(role, 'client', e.target.value)}
+                        style={{ width: '100%', height: '4px', margin: '4px 0' }}
+                      />
+                    </div>
+
+                    {/* Internal */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>Internal</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={roleInternal}
+                          disabled={!canEditQuotas || busy || isQuotaLockActive}
+                          onChange={(e) => updatePerRoleQuota(role, 'internal', e.target.value)}
+                          style={{
+                            width: '60px',
+                            padding: '4px 6px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            borderRadius: '4px',
+                            border: '1px solid #D1D5DB',
+                            textAlign: 'center',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={roleInternal}
+                        disabled={!canEditQuotas || busy || isQuotaLockActive}
+                        onChange={(e) => updatePerRoleQuota(role, 'internal', e.target.value)}
+                        style={{ width: '100%', height: '4px', margin: '4px 0' }}
+                      />
+                    </div>
+
+                    {/* R&D */}
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 500, color: '#6B7280' }}>R&D</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={roleRnd}
+                          disabled={!canEditQuotas || busy || isQuotaLockActive}
+                          onChange={(e) => updatePerRoleQuota(role, 'rnd', e.target.value)}
+                          style={{
+                            width: '60px',
+                            padding: '4px 6px',
+                            fontSize: '12px',
+                            fontWeight: 600,
+                            borderRadius: '4px',
+                            border: '1px solid #D1D5DB',
+                            textAlign: 'center',
+                            fontFamily: 'monospace',
+                          }}
+                        />
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.05}
+                        value={roleRnd}
+                        disabled={!canEditQuotas || busy || isQuotaLockActive}
+                        onChange={(e) => updatePerRoleQuota(role, 'rnd', e.target.value)}
+                        style={{ width: '100%', height: '4px', margin: '4px 0' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Validation Message */}
+                  {!roleValid && (
+                    <div style={{ fontSize: '12px', color: '#DC2626', fontWeight: 500 }}>
+                      {role} quotas must sum to 1.0 (currently {roleTotal.toFixed(2)})
+                    </div>
+                  )}
                 </div>
-                <div style={{ fontSize: '12px', color: '#64748B', marginTop: '4px' }}>
-                  Must equal 1.00 (100%)
-                </div>
-              </div>
-            </div>
+              )
+            })}
 
             {isQuotaLockActive && (
               <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: '6px', padding: '10px 12px', marginBottom: '16px', fontSize: '13px', color: '#991B1B' }}>
@@ -8914,10 +9100,13 @@ function SettingsPage({
               type="button"
               disabled={!canEditQuotas || busy || quotaTotalInvalid || isQuotaLockActive}
               onClick={() =>
-                void saveGovernanceQuotas({
-                  quota_client: quotaClient,
-                  quota_internal: quotaInternal,
-                })
+                void saveGovernanceQuotas(
+                  {
+                    quota_client: quotaClient,
+                    quota_internal: quotaInternal,
+                  },
+                  perRoleQuotas,
+                )
               }
             >
               {busy ? 'Saving...' : 'Save Quotas'}
