@@ -3190,6 +3190,11 @@ function App() {
               unlockRoadmapCommitment={unlockRoadmapCommitment}
               moveRoadmapCandidateToRnd={moveRoadmapCandidateToRnd}
               applyRedundancyDecision={applyRedundancyDecision}
+              resourceValidation={resourceValidation}
+              setResourceValidation={setResourceValidation}
+              showResourceValidationModal={showResourceValidationModal}
+              setShowResourceValidationModal={setShowResourceValidationModal}
+              commitSelectedToRoadmapWithValidation={commitSelectedToRoadmapWithValidation}
               busy={busy}
             />
           }
@@ -6697,11 +6702,6 @@ function RoadmapPage({
   roadmapInitiativeType,
   setRoadmapInitiativeType,
   roadmapDeliveryMode,
-  resourceValidation,
-  setResourceValidation,
-  showResourceValidationModal,
-  setShowResourceValidationModal,
-  commitSelectedToRoadmapWithValidation,
   setRoadmapDeliveryMode,
   roadmapRndHypothesis,
   roadmapRndExperimentGoal,
@@ -6737,7 +6737,6 @@ function RoadmapPage({
   moveRoadmapCandidateToRnd,
   applyRedundancyDecision,
   resourceValidation,
-  setResourceValidation,
   showResourceValidationModal,
   setShowResourceValidationModal,
   commitSelectedToRoadmapWithValidation,
@@ -7889,7 +7888,9 @@ function RoadmapPage({
                 type="button"
                 disabled={busy || commitBlockers.length > 0}
                 onClick={async () => {
-                  await commitSelectedToRoadmapWithValidation()
+                  if (selectedRoadmapItem) {
+                    await commitSelectedToRoadmapWithValidation(selectedRoadmapItem.id)
+                  }
                 }}
               >
                 Confirm Roadmap Commitment
@@ -8034,7 +8035,7 @@ function RoadmapPage({
                       if (gap.role === 'FS') setRoadmapFsFte(String(Number(roadmapFsFte) + additionalFte))
                     }
                   })
-                  setError('FTE values adjusted based on agent recommendations. Please review and save before committing.')
+                  alert('FTE values adjusted based on agent recommendations. Please review and save before committing.')
                 }}
                 style={{
                   padding: '10px 20px',
