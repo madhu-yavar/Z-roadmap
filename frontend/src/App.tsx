@@ -7212,7 +7212,7 @@ function RoadmapPage({
                         { role: 'FE', label: 'Frontend', value: roadmapFeFte, setter: setRoadmapFeFte, color: '#2563EB' },
                         { role: 'BE', label: 'Backend', value: roadmapBeFte, setter: setRoadmapBeFte, color: '#7C3AED' },
                         { role: 'AI', label: 'AI/ML', value: roadmapAiFte, setter: setRoadmapAiFte, color: '#DB2777' },
-                        { role: 'PM', label: 'Product', value: roadmapPmFte, setter: setRoadmapPmFte, color: '#059669' },
+                        { role: 'PM', label: 'Manager', value: roadmapPmFte, setter: setRoadmapPmFte, color: '#059669' },
                         { role: 'FS', label: 'Full Stack', value: roadmapFsFte, setter: setRoadmapFsFte, color: '#D97706' },
                       ].map(({ role, label, value, setter, color }, idx) => (
                         <div
