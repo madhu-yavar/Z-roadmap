@@ -214,6 +214,33 @@ type CapacityValidationResult = {
   reason: string
 }
 
+type ResourceValidationResult = {
+  validation_id: string
+  activity_analysis: {
+    total_activities: number
+    by_role: Record<string, number>
+    by_complexity: Record<string, number>
+  }
+  fte_gap_analysis: Array<{
+    role: string
+    activities: number
+    proposed_fte: number
+    estimated_weeks: number
+    required_fte: number
+    gap: number
+    severity: string
+  }>
+  fs_substitution_opportunities: Array<{
+    from_role: string
+    to_role: string
+    available_fte: number
+    shortage_fte: number
+    recommendation: string
+  }>
+  agent_message: string
+  confidence_score: number
+}
+
 type VersionItem = {
   id: number
   action: string
@@ -819,6 +846,9 @@ function App() {
   const [roadmapRedundancy, setRoadmapRedundancy] = useState<RoadmapRedundancy[]>([])
   const [roadmapRedundancyError, setRoadmapRedundancyError] = useState('')
   const [llmConfigs, setLlmConfigs] = useState<LLMConfig[]>([])
+
+  const [resourceValidation, setResourceValidation] = useState<ResourceValidationResult | null>(null)
+  const [showResourceValidationModal, setShowResourceValidationModal] = useState(false)
 
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [uploadPickerKey, setUploadPickerKey] = useState(0)
@@ -1924,6 +1954,77 @@ function App() {
       picked_up: roadmapPickedUp,
       expected_version_no: selectedRoadmapItem?.version_no ?? 0,
     }
+  }
+
+  async function validateResourceAllocation() {
+    if (!token || !selectedRoadmapItem) return null
+
+    const weeks = Number(roadmapMove.tentative_duration_weeks)
+    if (!Number.isFinite(weeks) || weeks <= 0) {
+      setError('Invalid duration weeks')
+      return null
+    }
+
+    try {
+      const result = await api<ResourceValidationResult>(
+        '/roadmap/validate-resource-allocation',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            intake_item_id: selectedRoadmapItem.id,
+            proposed_allocation: {
+              fe_fte: Number(roadmapFeFte) || 0,
+              be_fte: Number(roadmapBeFte) || 0,
+              ai_fte: Number(roadmapAiFte) || 0,
+              pm_fte: Number(roadmapPmFte) || 0,
+              fs_fte: Number(roadmapFsFte) || 0,
+            },
+            tentative_duration_weeks: weeks,
+            start_date: roadmapMove.pickup_period,
+            end_date: roadmapMove.completion_period,
+          }),
+        },
+        token,
+      )
+      setResourceValidation(result)
+      return result
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Resource validation failed')
+      return null
+    }
+  }
+
+  async function commitSelectedToRoadmapWithValidation() {
+    if (!token || !selectedRoadmapItem) return
+
+    // First, validate resource allocation
+    const validation = await validateResourceAllocation()
+    if (!validation) {
+      // If validation fails, still allow commitment but show error
+      const proceed = window.confirm(
+        'Resource validation failed. Proceed with commitment anyway?',
+      )
+      if (!proceed) return
+      await commitSelectedToRoadmap(selectedRoadmapItem.id)
+      return
+    }
+
+    // Check if there are any HIGH severity gaps
+    const hasHighGaps = validation.fte_gap_analysis.some((gap) => gap.severity === 'HIGH')
+
+    if (hasHighGaps) {
+      // Show validation modal
+      setShowResourceValidationModal(true)
+      return
+    }
+
+    // No high gaps - proceed with confirmation
+    const ok = window.confirm(
+      `Resource validation complete (${validation.confidence_score * 100}% confidence).\n\nConfirm Roadmap Commitment?\n\nThis is a public commitment and will become visible on the roadmap.`,
+    )
+    if (!ok) return
+
+    await commitSelectedToRoadmap(selectedRoadmapItem.id)
   }
 
   async function saveRoadmapCandidate(itemId: number) {
@@ -6569,6 +6670,11 @@ type RoadmapProps = {
     action: 'merge' | 'keep_both' | 'intentional_overlap',
     otherItemId: number,
   ) => Promise<void>
+  resourceValidation: ResourceValidationResult | null
+  setResourceValidation: Dispatch<SetStateAction<ResourceValidationResult | null>>
+  showResourceValidationModal: boolean
+  setShowResourceValidationModal: Dispatch<SetStateAction<boolean>>
+  commitSelectedToRoadmapWithValidation: (itemId: number) => Promise<void>
   busy: boolean
 }
 
@@ -6591,6 +6697,11 @@ function RoadmapPage({
   roadmapInitiativeType,
   setRoadmapInitiativeType,
   roadmapDeliveryMode,
+  resourceValidation,
+  setResourceValidation,
+  showResourceValidationModal,
+  setShowResourceValidationModal,
+  commitSelectedToRoadmapWithValidation,
   setRoadmapDeliveryMode,
   roadmapRndHypothesis,
   roadmapRndExperimentGoal,
@@ -6625,6 +6736,11 @@ function RoadmapPage({
   unlockRoadmapCommitment,
   moveRoadmapCandidateToRnd,
   applyRedundancyDecision,
+  resourceValidation,
+  setResourceValidation,
+  showResourceValidationModal,
+  setShowResourceValidationModal,
+  commitSelectedToRoadmapWithValidation,
   busy,
 }: RoadmapProps) {
   const [readiness, setReadiness] = useState<'explore_later' | 'shape_this_quarter' | 'ready_to_commit'>('shape_this_quarter')
@@ -7773,11 +7889,7 @@ function RoadmapPage({
                 type="button"
                 disabled={busy || commitBlockers.length > 0}
                 onClick={async () => {
-                  const ok = window.confirm(
-                    'Confirm Roadmap Commitment?\n\nThis is a public commitment and will become visible on the roadmap.',
-                  )
-                  if (!ok) return
-                  await commitSelectedToRoadmap(selectedRoadmapItem.id)
+                  await commitSelectedToRoadmapWithValidation()
                 }}
               >
                 Confirm Roadmap Commitment
@@ -7801,6 +7913,166 @@ function RoadmapPage({
           <p className="muted">Select a commitment candidate from the left list.</p>
         )}
       </section>
+
+      {/* Resource Validation Modal */}
+      {showResourceValidationModal && resourceValidation && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '24px',
+            maxWidth: '700px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 600, margin: 0 }}>Resource Validation Results</h2>
+              <button
+                onClick={() => setShowResourceValidationModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#6B7280',
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '16px', padding: '12px', background: '#FEF3C7', borderRadius: '6px', fontSize: '14px', lineHeight: '1.5' }}>
+              <strong>AI Agent Analysis:</strong><br />
+              <span style={{ whiteSpace: 'pre-line' }}>{resourceValidation.agent_message}</span>
+            </div>
+
+            {resourceValidation.fte_gap_analysis.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px' }}>FTE Gap Analysis</h3>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '2px solid #E5E7EB' }}>
+                      <th style={{ padding: '8px', textAlign: 'left', fontSize: '13px' }}>Role</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>Activities</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>Proposed</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>Required</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>Gap</th>
+                      <th style={{ padding: '8px', textAlign: 'center', fontSize: '13px' }}>Severity</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resourceValidation.fte_gap_analysis.map((gap) => (
+                      <tr key={gap.role} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                        <td style={{ padding: '8px', fontWeight: 500 }}>{gap.role}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{gap.activities}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{gap.proposed_fte}</td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>{gap.required_fte}</td>
+                        <td style={{ padding: '8px', textAlign: 'center', color: gap.gap < 0 ? '#DC2626' : '#059669' }}>
+                          {gap.gap > 0 ? '+' : ''}{gap.gap}
+                        </td>
+                        <td style={{ padding: '8px', textAlign: 'center' }}>
+                          <span style={{
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            background: gap.severity === 'HIGH' ? '#FEE2E2' : gap.severity === 'MEDIUM' ? '#FEF3C7' : '#D1FAE5',
+                            color: gap.severity === 'HIGH' ? '#DC2626' : gap.severity === 'MEDIUM' ? '#D97706' : '#059669',
+                          }}>
+                            {gap.severity}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {resourceValidation.fs_substitution_opportunities.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px' }}>FS Substitution Opportunities</h3>
+                {resourceValidation.fs_substitution_opportunities.map((opp, idx) => (
+                  <div key={idx} style={{
+                    padding: '12px',
+                    background: '#EFF6FF',
+                    borderRadius: '6px',
+                    marginBottom: '8px',
+                    fontSize: '14px',
+                  }}>
+                    💡 <strong>FS → {opp.to_role}:</strong> {opp.recommendation}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', paddingTop: '16px', borderTop: '1px solid #E5E7EB' }}>
+              <button
+                onClick={() => {
+                  setShowResourceValidationModal(false)
+                  // Adjust FTE based on suggestions
+                  resourceValidation.fte_gap_analysis.forEach((gap) => {
+                    if (gap.severity === 'HIGH' && gap.gap < 0) {
+                      const additionalFte = Math.abs(gap.gap)
+                      if (gap.role === 'FE') setRoadmapFeFte(String(Number(roadmapFeFte) + additionalFte))
+                      if (gap.role === 'BE') setRoadmapBeFte(String(Number(roadmapBeFte) + additionalFte))
+                      if (gap.role === 'AI') setRoadmapAiFte(String(Number(roadmapAiFte) + additionalFte))
+                      if (gap.role === 'PM') setRoadmapPmFte(String(Number(roadmapPmFte) + additionalFte))
+                      if (gap.role === 'FS') setRoadmapFsFte(String(Number(roadmapFsFte) + additionalFte))
+                    }
+                  })
+                  setError('FTE values adjusted based on agent recommendations. Please review and save before committing.')
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  borderRadius: '6px',
+                  border: '1px solid #D1D5DB',
+                  background: 'white',
+                  color: '#374151',
+                  cursor: 'pointer',
+                }}
+              >
+                Adjust FTE
+              </button>
+              <button
+                onClick={async () => {
+                  setShowResourceValidationModal(false)
+                  if (selectedRoadmapItem) {
+                    await commitSelectedToRoadmap(selectedRoadmapItem.id)
+                  }
+                }}
+                style={{
+                  padding: '10px 20px',
+                  fontSize: '14px',
+                  fontWeight: 500,
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: '#DC2626',
+                  color: 'white',
+                  cursor: 'pointer',
+                }}
+              >
+                Proceed Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
