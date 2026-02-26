@@ -725,7 +725,17 @@ function utilizationFromUsage(usage: RoleTotals, capacity: RoleTotals): Capacity
 
 type ActivityTag = 'FE' | 'BE' | 'AI'
 
+type ActivityComplexity = 'Simple' | 'Medium' | 'Complex'
+
+interface Activity {
+  text: string
+  tags: ActivityTag[]
+  complexity: ActivityComplexity
+}
+
 const ACTIVITY_TAGS: ActivityTag[] = ['FE', 'BE', 'AI']
+
+const ACTIVITY_COMPLEXITY: ActivityComplexity[] = ['Simple', 'Medium', 'Complex']
 
 function parseActivityEntry(value: string): { text: string; tags: ActivityTag[] } {
   const raw = (value || '').trim()
@@ -740,7 +750,23 @@ function parseActivityEntry(value: string): { text: string; tags: ActivityTag[] 
   return { text: (matched[2] || '').trim(), tags }
 }
 
-function formatActivityEntry(text: string, tags: ActivityTag[]): string {
+function parseActivityWithComplexity(value: string): Activity {
+  const parsed = parseActivityEntry(value)
+  return {
+    text: parsed.text,
+    tags: parsed.tags,
+    complexity: 'Medium', // Default complexity
+  }
+}
+
+function formatActivityEntry(activity: Activity): string {
+  const cleanText = (activity.text || '').trim()
+  const cleanTags = Array.from(new Set(activity.tags.filter((t) => ACTIVITY_TAGS.includes(t))))
+  if (cleanTags.length === 0) return cleanText
+  return `[${cleanTags.join('/')}] ${cleanText}`
+}
+
+function formatActivityEntryLegacy(text: string, tags: ActivityTag[]): string {
   const cleanText = (text || '').trim()
   const cleanTags = Array.from(new Set(tags.filter((t) => ACTIVITY_TAGS.includes(t))))
   if (!cleanTags.length) return cleanText
@@ -762,8 +788,8 @@ function hasAiTagInActivities(items: string[]): boolean {
 function ensureTaggedActivity(value: string): string {
   const parsed = parseActivityEntry(value)
   const text = (parsed.text || value || '').trim()
-  if (parsed.tags.length > 0) return formatActivityEntry(text, parsed.tags)
-  return formatActivityEntry(text, [inferActivityTag(text)])
+  if (parsed.tags.length > 0) return formatActivityEntryLegacy(text, parsed.tags)
+  return formatActivityEntryLegacy(text, [inferActivityTag(text)])
 }
 
 function normalizeActivitiesForEditor(items: string[]): string[] {
@@ -810,7 +836,7 @@ function App() {
   const [selectedRoadmapId, setSelectedRoadmapId] = useState<number | null>(null)
   const [roadmapTitle, setRoadmapTitle] = useState('')
   const [roadmapScope, setRoadmapScope] = useState('')
-  const [roadmapActivities, setRoadmapActivities] = useState<string[]>([])
+  const [roadmapActivities, setRoadmapActivities] = useState<Activity[]>([])
   const [roadmapPriority, setRoadmapPriority] = useState('medium')
   const [roadmapProjectContext, setRoadmapProjectContext] = useState('client')
   const [roadmapInitiativeType, setRoadmapInitiativeType] = useState('new_feature')
@@ -1275,7 +1301,10 @@ function App() {
     }
     setRoadmapTitle(selectedRoadmapItem.title)
     setRoadmapScope(selectedRoadmapItem.scope)
-    setRoadmapActivities(selectedRoadmapItem.activities)
+    // Convert string[] to Activity[] with default Medium complexity
+    setRoadmapActivities(
+      (selectedRoadmapItem.activities || []).map((a: string) => parseActivityWithComplexity(a))
+    )
     setRoadmapPriority(selectedRoadmapItem.priority || 'medium')
     setRoadmapProjectContext(selectedRoadmapItem.project_context || 'client')
     setRoadmapInitiativeType(selectedRoadmapItem.initiative_type || 'new_feature')
@@ -1815,7 +1844,7 @@ function App() {
         if (i !== index) return it
         const parsed = parseActivityEntry(it)
         const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(value)]
-        return formatActivityEntry(value, tags)
+        return formatActivityEntryLegacy(value, tags)
       }),
     )
   }
@@ -1828,7 +1857,7 @@ function App() {
         const has = parsed.tags.includes(tag)
         let nextTags = has ? parsed.tags.filter((t) => t !== tag) : [...parsed.tags, tag]
         if (nextTags.length === 0) nextTags = ['BE']
-        return formatActivityEntry(parsed.text, nextTags)
+        return formatActivityEntryLegacy(parsed.text, nextTags)
       }),
     )
   }
@@ -1874,7 +1903,7 @@ function App() {
     return {
       title: roadmapTitle,
       scope: roadmapScope,
-      activities: roadmapActivities.map((x) => x.trim()).filter(Boolean),
+      activities: roadmapActivities.map(formatActivityEntry),
       priority: roadmapPriority,
       project_context: roadmapProjectContext,
       initiative_type: roadmapInitiativeType,
@@ -6474,8 +6503,8 @@ type RoadmapProps = {
   setRoadmapTitle: Dispatch<SetStateAction<string>>
   roadmapScope: string
   setRoadmapScope: Dispatch<SetStateAction<string>>
-  roadmapActivities: string[]
-  setRoadmapActivities: Dispatch<SetStateAction<string[]>>
+  roadmapActivities: Activity[]
+  setRoadmapActivities: Dispatch<SetStateAction<Activity[]>>
   roadmapProjectContext: string
   setRoadmapProjectContext: Dispatch<SetStateAction<string>>
   roadmapInitiativeType: string
@@ -6758,16 +6787,16 @@ function RoadmapPage({
   }
 
   function addRoadmapActivity() {
-    setRoadmapActivities((items) => [...items, '[BE]'])
+    setRoadmapActivities((items) => [...items, { text: '', tags: ['BE'], complexity: 'Medium' }])
   }
 
   function updateRoadmapActivity(index: number, value: string) {
     setRoadmapActivities((items) =>
       items.map((it, i) => {
         if (i !== index) return it
-        const parsed = parseActivityEntry(it)
+        const parsed = parseActivityEntry(value)
         const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(value)]
-        return formatActivityEntry(value, tags)
+        return { ...it, text: parsed.text || value, tags }
       }),
     )
   }
@@ -6776,11 +6805,19 @@ function RoadmapPage({
     setRoadmapActivities((items) =>
       items.map((it, i) => {
         if (i !== index) return it
-        const parsed = parseActivityEntry(it)
-        const has = parsed.tags.includes(tag)
-        let nextTags = has ? parsed.tags.filter((t) => t !== tag) : [...parsed.tags, tag]
+        const has = it.tags.includes(tag)
+        let nextTags = has ? it.tags.filter((t) => t !== tag) : [...it.tags, tag]
         if (nextTags.length === 0) nextTags = ['BE']
-        return formatActivityEntry(parsed.text, nextTags)
+        return { ...it, tags: nextTags }
+      }),
+    )
+  }
+
+  function updateRoadmapActivityComplexity(index: number, complexity: ActivityComplexity) {
+    setRoadmapActivities((items) =>
+      items.map((it, i) => {
+        if (i !== index) return it
+        return { ...it, complexity }
       }),
     )
   }
@@ -6913,10 +6950,9 @@ function RoadmapPage({
               <ul className="understanding-list">
                 {roadmapActivities.length > 0 ? (
                   roadmapActivities.map((a, i) => {
-                    const parsed = parseActivityEntry(a)
-                    const visibleTags = parsed.tags.length ? parsed.tags : [inferActivityTag(parsed.text || a)]
+                    const visibleTags = a.tags.length ? a.tags : [inferActivityTag(a.text)]
                     return (
-                      <li key={`${i}-${a}`}>
+                      <li key={`${i}-${a.text}`}>
                         <div className="activity-read-row">
                           <div className="activity-chip-row">
                             {visibleTags.map((tag) => (
@@ -6924,8 +6960,16 @@ function RoadmapPage({
                                 {tag}
                               </span>
                             ))}
+                            <span className="activity-tag-chip tag-complexity active" style={{
+                              background: '#F3F4F6',
+                              color: '#6B7280',
+                              fontSize: '11px',
+                              padding: '2px 8px',
+                            }}>
+                              {a.complexity}
+                            </span>
                           </div>
-                          <span>{parsed.text || a}</span>
+                          <span>{a.text}</span>
                         </div>
                       </li>
                     )
@@ -7502,26 +7546,26 @@ function RoadmapPage({
                         <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280', width: '50px' }}>#</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280' }}>Tags</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280' }}>Activity</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280', width: '120px' }}>Complexity</th>
                         <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280', width: '100px' }}>Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {roadmapActivities.length === 0 && (
                         <tr>
-                          <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#9CA3AF', fontSize: '14px' }}>
+                          <td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: '#9CA3AF', fontSize: '14px' }}>
                             No activities added yet.
                           </td>
                         </tr>
                       )}
                       {roadmapActivities.map((activity, idx) => {
-                        const parsed = parseActivityEntry(activity)
                         return (
-                          <tr key={`${idx}-${activity}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <tr key={`${idx}-${activity.text}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
                             <td style={{ padding: '12px', color: '#6B7280', fontSize: '13px' }}>{idx + 1}</td>
                             <td style={{ padding: '12px' }}>
                               <div className="activity-chip-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                                 {ACTIVITY_TAGS.map((tag) => {
-                                  const active = parsed.tags.includes(tag)
+                                  const active = activity.tags.includes(tag)
                                   return (
                                     <button
                                       key={`${idx}-${tag}`}
@@ -7548,7 +7592,7 @@ function RoadmapPage({
                             <td style={{ padding: '12px' }}>
                               <input
                                 className="activity-input"
-                                value={parsed.text}
+                                value={activity.text}
                                 disabled={isLocked || busy}
                                 onChange={(e) => updateRoadmapActivity(idx, e.target.value)}
                                 placeholder="Enter activity"
@@ -7561,6 +7605,29 @@ function RoadmapPage({
                                   background: (isLocked || busy) ? '#F9FAFB' : 'white',
                                 }}
                               />
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <select
+                                value={activity.complexity}
+                                disabled={isLocked || busy}
+                                onChange={(e) => updateRoadmapActivityComplexity(idx, e.target.value as ActivityComplexity)}
+                                style={{
+                                  width: '100%',
+                                  padding: '6px 10px',
+                                  fontSize: '13px',
+                                  fontWeight: 500,
+                                  borderRadius: '6px',
+                                  border: '1px solid #D1D5DB',
+                                  background: (isLocked || busy) ? '#F9FAFB' : 'white',
+                                  cursor: (isLocked || busy) ? 'not-allowed' : 'pointer',
+                                }}
+                              >
+                                {ACTIVITY_COMPLEXITY.map((comp) => (
+                                  <option key={comp} value={comp}>
+                                    {comp}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             <td style={{ padding: '12px' }}>
                               <button

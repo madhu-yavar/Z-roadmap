@@ -31,7 +31,8 @@
       "Bash(gzip:*)",
       "Bash(scp:*)",
       "Bash(ls:*)",
-      "Bash(./deploy-vm.sh:*)"
+      "Bash(./deploy-vm.sh:*)",
+      "Bash(uvicorn:*)"
     ]
   }
 }

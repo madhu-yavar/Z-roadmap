@@ -43,6 +43,11 @@ from app.schemas.roadmap import (
     RedundancyMatchOut,
     RoadmapUnlockOut,
 )
+from app.schemas.resource_validation import (
+    ResourceValidationRequest,
+    ResourceValidationResponse,
+)
+from app.services.resource_validation import analyze_resource_allocation
 from app.services.versioning import log_roadmap_version
 
 router = APIRouter(prefix="/roadmap", tags=["roadmap"])
@@ -1584,3 +1589,33 @@ def move_bucket_items_to_roadmap(
 
     db.commit()
     return RoadmapMoveOut(moved=moved)
+
+
+@router.post("/validate-resource-allocation", response_model=ResourceValidationResponse)
+def validate_resource_allocation(
+    payload: ResourceValidationRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Validate resource allocation for a roadmap commitment.
+
+    Analyzes activities, compares proposed FTE with activity-based estimates,
+    and identifies gaps with FS substitution opportunities.
+    """
+    # Get the intake item to access activities
+    item = db.get(IntakeItem, payload.intake_item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Intake item not found")
+
+    activities = item.activities or []
+
+    # Run analysis
+    result = analyze_resource_allocation(
+        activities=activities,
+        proposed_allocation=payload.proposed_allocation,
+        tentative_duration_weeks=payload.tentative_duration_weeks,
+    )
+
+    return result
+
