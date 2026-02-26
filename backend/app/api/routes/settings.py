@@ -128,14 +128,14 @@ def update_governance_team_config(
             status_code=423,
             detail=f"Team capacity is locked until {cfg.team_locked_until.isoformat()}",
         )
-    if min(payload.team_fe, payload.team_be, payload.team_ai, payload.team_pm) < TEAM_SIZE_MIN:
-        raise HTTPException(status_code=400, detail=f"Team size must be at least {TEAM_SIZE_MIN} for FE, BE, AI, and PM")
-    if min(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm) < EFFICIENCY_MIN:
+    if min(payload.team_fe, payload.team_be, payload.team_ai, payload.team_pm, payload.team_fs) < TEAM_SIZE_MIN:
+        raise HTTPException(status_code=400, detail=f"Team size must be at least {TEAM_SIZE_MIN} for FE, BE, AI, PM, and FS")
+    if min(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm, payload.efficiency_fs) < EFFICIENCY_MIN:
         raise HTTPException(
             status_code=400,
             detail=f"Efficiency must be between {EFFICIENCY_MIN:.2f} and {EFFICIENCY_MAX:.2f}",
         )
-    if max(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm) > EFFICIENCY_MAX:
+    if max(payload.efficiency_fe, payload.efficiency_be, payload.efficiency_ai, payload.efficiency_pm, payload.efficiency_fs) > EFFICIENCY_MAX:
         raise HTTPException(
             status_code=400,
             detail=f"Efficiency must be between {EFFICIENCY_MIN:.2f} and {EFFICIENCY_MAX:.2f}",
@@ -145,10 +145,12 @@ def update_governance_team_config(
     cfg.team_be = payload.team_be
     cfg.team_ai = payload.team_ai
     cfg.team_pm = payload.team_pm
+    cfg.team_fs = payload.team_fs
     cfg.efficiency_fe = payload.efficiency_fe
     cfg.efficiency_be = payload.efficiency_be
     cfg.efficiency_ai = payload.efficiency_ai
     cfg.efficiency_pm = payload.efficiency_pm
+    cfg.efficiency_fs = payload.efficiency_fs
     now_utc = datetime.utcnow()
     cfg.team_locked_until = now_utc + timedelta(hours=LOCK_WINDOW_HOURS)
     cfg.team_locked_by = current_user.id

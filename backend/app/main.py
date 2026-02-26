@@ -178,6 +178,8 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_pm DOUBLE PRECISION NOT NULL DEFAULT 1.0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_fs INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS efficiency_fs DOUBLE PRECISION NOT NULL DEFAULT 1.0",
+        # Update existing team_fs = 0 to a default value for organizations adding FS later
+        "UPDATE governance_configs SET team_fs = 2 WHERE team_fs = 0",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_until TIMESTAMP",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS team_locked_by INTEGER",
         "ALTER TABLE governance_configs ADD COLUMN IF NOT EXISTS quota_locked_until TIMESTAMP",
