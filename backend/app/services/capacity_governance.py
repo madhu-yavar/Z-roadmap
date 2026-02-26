@@ -74,7 +74,7 @@ def _weekly_capacity(cfg: GovernanceConfig) -> dict[str, dict[str, float]]:
 
 
 def _weekly_usage(plans: list[RoadmapPlanItem]) -> tuple[dict[str, dict[str, dict[str, float]]], int]:
-    usage: dict[str, dict[str, dict[str, float]]] = {"client": {}, "internal": {}}
+    usage: dict[str, dict[str, dict[str, float]]] = {"client": {}, "internal": {}, "rnd": {}}
     unscheduled_demand_items = 0
     for plan in plans:
         role_values = {
