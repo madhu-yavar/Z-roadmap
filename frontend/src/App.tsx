@@ -7046,28 +7046,28 @@ function RoadmapPage({
                   )}
                 </div>
 
-                {/* Main Grid: Zone 1 (65%) + Zone 2 (35%) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1.86fr 1fr', gap: '24px', marginBottom: '24px' }}>
-                  {/* Zone 1: Project Definition (Left 65%) */}
+                {/* Main Grid: Zone 1 (60%) + Zone 2 (40%) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px', marginBottom: '24px' }}>
+                  {/* Zone 1: Project Definition (Left 60%) */}
                   <div style={{
                     background: 'white',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
-                    padding: '24px',
+                    padding: '20px',
                   }}>
                     <div style={{
                       fontSize: '18px',
                       fontWeight: 600,
                       color: '#111827',
-                      marginBottom: '20px',
-                      paddingBottom: '12px',
+                      marginBottom: '16px',
+                      paddingBottom: '8px',
                       borderBottom: '1px solid #E5E7EB',
                     }}>
                       Project Definition
                     </div>
 
                     {/* Title - Full Width */}
-                    <div style={{ marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
                         Title
                       </label>
@@ -7078,7 +7078,7 @@ function RoadmapPage({
                         placeholder="Refine commitment title"
                         style={{
                           width: '100%',
-                          padding: '10px 12px',
+                          padding: '8px 12px',
                           fontSize: '14px',
                           borderRadius: '6px',
                           border: '1px solid #D1D5DB',
@@ -7089,7 +7089,7 @@ function RoadmapPage({
                     </div>
 
                     {/* Scope - Full Width, Large Textarea */}
-                    <div style={{ marginBottom: '16px' }}>
+                    <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
                         Scope
                       </label>
@@ -7101,7 +7101,7 @@ function RoadmapPage({
                         placeholder="Refine commitment scope"
                         style={{
                           width: '100%',
-                          padding: '10px 12px',
+                          padding: '8px 12px',
                           fontSize: '14px',
                           borderRadius: '6px',
                           border: '1px solid #D1D5DB',
@@ -7114,7 +7114,7 @@ function RoadmapPage({
                     </div>
 
                     {/* 3-Column Grid: Project Type / Delivery Mode / Initiative */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                       <div>
                         <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
                           Project Type
@@ -7125,7 +7125,7 @@ function RoadmapPage({
                           onChange={(e) => setRoadmapProjectContext(e.target.value)}
                           style={{
                             width: '100%',
-                            padding: '10px 12px',
+                            padding: '8px 12px',
                             fontSize: '14px',
                             borderRadius: '6px',
                             border: '1px solid #D1D5DB',
@@ -7148,7 +7148,7 @@ function RoadmapPage({
                           onChange={(e) => setRoadmapDeliveryMode(e.target.value)}
                           style={{
                             width: '100%',
-                            padding: '10px 12px',
+                            padding: '8px 12px',
                             fontSize: '14px',
                             borderRadius: '6px',
                             border: '1px solid #D1D5DB',
@@ -7171,7 +7171,7 @@ function RoadmapPage({
                           onChange={(e) => setRoadmapInitiativeType(e.target.value)}
                           style={{
                             width: '100%',
-                            padding: '10px 12px',
+                            padding: '8px 12px',
                             fontSize: '14px',
                             borderRadius: '6px',
                             border: '1px solid #D1D5DB',
@@ -7186,12 +7186,12 @@ function RoadmapPage({
                     </div>
                   </div>
 
-                  {/* Zone 2: Resource Commitment (Right 35%) */}
+                  {/* Zone 2: Resource Commitment (Right 40%) */}
                   <div style={{
                     background: 'white',
                     border: '1px solid #E5E7EB',
                     borderRadius: '8px',
-                    padding: '24px',
+                    padding: '20px',
                     display: 'flex',
                     flexDirection: 'column',
                   }}>
@@ -7199,27 +7199,56 @@ function RoadmapPage({
                       fontSize: '18px',
                       fontWeight: 600,
                       color: '#111827',
-                      marginBottom: '20px',
-                      paddingBottom: '12px',
+                      marginBottom: '16px',
+                      paddingBottom: '8px',
                       borderBottom: '1px solid #E5E7EB',
                     }}>
                       Proposed Resource Allocation
                     </div>
 
-                    {/* 5-Column FTE Grid */}
-                    <div style={{ marginBottom: '20px' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '16px' }}>
-                        {[
-                          { role: 'FE', value: roadmapFeFte, setter: setRoadmapFeFte },
-                          { role: 'BE', value: roadmapBeFte, setter: setRoadmapBeFte },
-                          { role: 'AI', value: roadmapAiFte, setter: setRoadmapAiFte },
-                          { role: 'PM', value: roadmapPmFte, setter: setRoadmapPmFte },
-                          { role: 'FS', value: roadmapFsFte, setter: setRoadmapFsFte },
-                        ].map(({ role, value, setter }) => (
-                          <div key={role}>
-                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#6B7280', marginBottom: '6px', textAlign: 'center' }}>
-                              {role}
-                            </label>
+                    {/* Compact Vertical FTE Rows */}
+                    <div style={{ marginBottom: '16px' }}>
+                      {[
+                        { role: 'FE', label: 'Frontend', value: roadmapFeFte, setter: setRoadmapFeFte, color: '#2563EB' },
+                        { role: 'BE', label: 'Backend', value: roadmapBeFte, setter: setRoadmapBeFte, color: '#7C3AED' },
+                        { role: 'AI', label: 'AI/ML', value: roadmapAiFte, setter: setRoadmapAiFte, color: '#DB2777' },
+                        { role: 'PM', label: 'Product', value: roadmapPmFte, setter: setRoadmapPmFte, color: '#059669' },
+                        { role: 'FS', label: 'Full Stack', value: roadmapFsFte, setter: setRoadmapFsFte, color: '#D97706' },
+                      ].map(({ role, label, value, setter, color }, idx) => (
+                        <div
+                          key={role}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '32px 1fr 80px',
+                            gap: '12px',
+                            alignItems: 'center',
+                            padding: '8px 0',
+                            borderBottom: idx < 4 ? '1px solid #F3F4F6' : 'none',
+                          }}
+                        >
+                          {/* Role Badge */}
+                          <div style={{
+                            width: '32px',
+                            height: '32px',
+                            borderRadius: '6px',
+                            background: color + '15',
+                            color: color,
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            {role}
+                          </div>
+
+                          {/* Role Label */}
+                          <div style={{ fontSize: '14px', fontWeight: 500, color: '#374151' }}>
+                            {label}
+                          </div>
+
+                          {/* FTE Input with inline unit */}
+                          <div style={{ position: 'relative' }}>
                             <input
                               type="number"
                               min={0}
@@ -7227,35 +7256,46 @@ function RoadmapPage({
                               value={value}
                               disabled={isLocked || busy}
                               onChange={(e) => setter(e.target.value)}
-                              placeholder="0"
+                              placeholder="0.00"
                               style={{
                                 width: '100%',
-                                padding: '8px',
-                                fontSize: '14px',
+                                padding: '6px 32px 6px 10px',
+                                fontSize: '18px',
                                 fontWeight: 600,
                                 borderRadius: '6px',
                                 border: '1px solid #D1D5DB',
                                 background: isLocked || busy ? '#F9FAFB' : 'white',
                                 color: '#111827',
-                                textAlign: 'center',
+                                textAlign: 'right',
                                 fontFamily: 'monospace',
+                                height: '38px',
                               }}
                             />
-                            <div style={{ fontSize: '11px', color: '#9CA3AF', textAlign: 'center', marginTop: '4px' }}>FTE</div>
+                            <span style={{
+                              position: 'absolute',
+                              right: '10px',
+                              top: '50%',
+                              transform: 'translateY(-50%)',
+                              fontSize: '12px',
+                              fontWeight: 500,
+                              color: '#9CA3AF',
+                              pointerEvents: 'none',
+                            }}>
+                              FTE
+                            </span>
                           </div>
-                        ))}
-                      </div>
+                        </div>
+                      ))}
                     </div>
 
-                    {/* Capacity Validation Panel */}
+                    {/* Compact Capacity Status */}
                     <div style={{
-                      flex: 1,
-                      padding: '16px',
-                      borderRadius: '8px',
-                      border: '2px solid',
+                      padding: '12px',
+                      borderRadius: '6px',
+                      border: '1px solid',
                       background: (() => {
                         if (capacityValidationBusy) return '#FEF3C7'
-                        if (!capacityValidation) return '#F3F4F6'
+                        if (!capacityValidation) return '#F9FAFB'
                         if (capacityValidation.status === 'APPROVED') return '#F0FDF4'
                         return '#FEF2F2'
                       })(),
@@ -7266,62 +7306,81 @@ function RoadmapPage({
                         return '#EF4444'
                       })(),
                     }}>
-                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>
-                        Capacity Check Status
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        Capacity Check
                       </div>
 
                       {capacityValidationBusy && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <div style={{
-                            width: '16px',
-                            height: '16px',
+                            width: '14px',
+                            height: '14px',
                             borderRadius: '50%',
                             border: '2px solid #FBBF24',
                             borderTopColor: 'transparent',
                             animation: 'spin 1s linear infinite',
                           }} />
-                          <span style={{ fontSize: '13px', color: '#92400E' }}>Validating capacity...</span>
+                          <span style={{ fontSize: '13px', color: '#92400E' }}>Validating...</span>
                         </div>
                       )}
 
                       {!capacityValidationBusy && (
                         <>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                            <div>
-                              <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '4px' }}>Requested</div>
-                              <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'monospace', color: '#111827' }}>
-                                {(Number(roadmapFeFte || 0) + Number(roadmapBeFte || 0) + Number(roadmapAiFte || 0) + Number(roadmapPmFte || 0) + Number(roadmapFsFte || 0)).toFixed(2)} <span style={{ fontSize: '13px', fontWeight: 500, color: '#6B7280' }}>FTE</span>
-                              </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '8px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                              <span style={{ color: '#6B7280' }}>Requested:</span>
+                              <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#111827' }}>
+                                {(Number(roadmapFeFte || 0) + Number(roadmapBeFte || 0) + Number(roadmapAiFte || 0) + Number(roadmapPmFte || 0) + Number(roadmapFsFte || 0)).toFixed(2)} FTE
+                              </span>
                             </div>
-                            <div>
-                              <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '4px' }}>Status</div>
-                              <div style={{ fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                {!capacityValidation ? (
-                                  <>
-                                    <span style={{ color: '#F59E0B' }}>🟡</span>
-                                    <span style={{ color: '#92400E' }}>Not evaluated</span>
-                                  </>
-                                ) : capacityValidation.status === 'APPROVED' ? (
-                                  <>
-                                    <span>✅</span>
-                                    <span style={{ color: '#166534' }}>Within capacity</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <span>❌</span>
-                                    <span style={{ color: '#991B1B' }}>Exceeds limit</span>
-                                  </>
-                                )}
-                              </div>
-                            </div>
+                            {capacityValidation && (
+                              <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                                  <span style={{ color: '#6B7280' }}>Available:</span>
+                                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: '#111827' }}>
+                                    {/* Available FTE would be calculated from governance config */}
+                                    —
+                                  </span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            paddingTop: '8px',
+                            borderTop: '1px solid',
+                            borderColor: 'inherit',
+                          }}>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>Status</span>
+                            <span style={{ fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {!capacityValidation ? (
+                                <>
+                                  <span style={{ color: '#F59E0B' }}>🟡</span>
+                                  <span style={{ color: '#92400E' }}>Not Evaluated</span>
+                                </>
+                              ) : capacityValidation.status === 'APPROVED' ? (
+                                <>
+                                  <span>✅</span>
+                                  <span style={{ color: '#166534' }}>Within Capacity</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span>❌</span>
+                                  <span style={{ color: '#991B1B' }}>Exceeds Limit</span>
+                                </>
+                              )}
+                            </span>
                           </div>
 
                           {capacityValidation && capacityValidation.status !== 'APPROVED' && (
                             <div style={{
-                              padding: '10px',
+                              marginTop: '8px',
+                              padding: '8px',
                               borderRadius: '4px',
                               background: '#FEF2F2',
-                              border: '1px solid #FECACA',
                               fontSize: '12px',
                               color: '#991B1B',
                             }}>
@@ -7331,10 +7390,10 @@ function RoadmapPage({
 
                           {capacityValidationError && (
                             <div style={{
-                              padding: '10px',
+                              marginTop: '8px',
+                              padding: '8px',
                               borderRadius: '4px',
                               background: '#FEF2F2',
-                              border: '1px solid #FECACA',
                               fontSize: '12px',
                               color: '#991B1B',
                             }}>
