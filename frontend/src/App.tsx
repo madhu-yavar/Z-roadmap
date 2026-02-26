@@ -2009,22 +2009,9 @@ function App() {
       return
     }
 
-    // Check if there are any HIGH severity gaps
-    const hasHighGaps = validation.fte_gap_analysis.some((gap) => gap.severity === 'HIGH')
-
-    if (hasHighGaps) {
-      // Show validation modal
-      setShowResourceValidationModal(true)
-      return
-    }
-
-    // No high gaps - proceed with confirmation
-    const ok = window.confirm(
-      `Resource validation complete (${validation.confidence_score * 100}% confidence).\n\nConfirm Roadmap Commitment?\n\nThis is a public commitment and will become visible on the roadmap.`,
-    )
-    if (!ok) return
-
-    await commitSelectedToRoadmap(selectedRoadmapItem.id)
+    // Always show validation modal for testing (can be changed back to HIGH only later)
+    setShowResourceValidationModal(true)
+    return
   }
 
   async function saveRoadmapCandidate(itemId: number) {
