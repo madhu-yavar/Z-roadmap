@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class ResourceValidationRequest(BaseModel):
-    intake_item_id: int
+    activities: list[str]  # List of activity strings to validate
     proposed_allocation: dict[str, float]  # fe_fte, be_fte, ai_fte, pm_fte, fs_fte
     tentative_duration_weeks: int
     start_date: str

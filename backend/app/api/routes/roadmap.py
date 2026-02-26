@@ -1603,12 +1603,8 @@ def validate_resource_allocation(
     Analyzes activities, compares proposed FTE with activity-based estimates,
     and identifies gaps with FS substitution opportunities.
     """
-    # Get the intake item to access activities
-    item = db.get(IntakeItem, payload.intake_item_id)
-    if not item:
-        raise HTTPException(status_code=404, detail="Intake item not found")
-
-    activities = item.activities or []
+    # Use activities directly from the request payload
+    activities = payload.activities or []
 
     # Run analysis
     result = analyze_resource_allocation(

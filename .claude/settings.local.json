@@ -32,7 +32,9 @@
       "Bash(scp:*)",
       "Bash(ls:*)",
       "Bash(./deploy-vm.sh:*)",
-      "Bash(uvicorn:*)"
+      "Bash(uvicorn:*)",
+      "Bash(./deploy.sh:*)",
+      "Bash(PYTHONPATH=/Users/yavar/Documents/CoE/Roadmap Agent/backend python:*)"
     ]
   }
 }

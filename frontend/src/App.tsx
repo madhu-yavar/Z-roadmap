@@ -2009,7 +2009,7 @@ function App() {
         {
           method: 'POST',
           body: JSON.stringify({
-            intake_item_id: selectedRoadmapItem.id,
+            activities: roadmapActivities.map(formatActivityEntry),
             proposed_allocation: {
               fe_fte: Number(roadmapFeFte) || 0,
               be_fte: Number(roadmapBeFte) || 0,
