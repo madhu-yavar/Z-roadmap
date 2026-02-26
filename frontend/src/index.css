@@ -2147,6 +2147,11 @@ button.icon-only:disabled:hover {
   100% { transform: scale(0.8); opacity: 0.45; }
 }
 
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

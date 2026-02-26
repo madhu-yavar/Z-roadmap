@@ -6939,246 +6939,553 @@ function RoadmapPage({
 
             <details className="flat-detail" open>
               <summary>Scope and activities refinement</summary>
-              <div className="activity-editor">
-                <div className="line-item">
-                  <strong>Update details before commitment</strong>
-                  <div className="activity-chip-row">
-                    {!isLocked && (
-                      <button
-                        className="ghost-btn tiny"
-                        type="button"
-                        disabled={busy}
-                        onClick={() => void saveRoadmapCandidate(selectedRoadmapItem.id)}
-                      >
-                        Save Candidate Updates
-                      </button>
-                    )}
-                    {!isLocked && canManageCommitments && (
-                      <button
-                        className="ghost-btn tiny"
-                        type="button"
-                        disabled={busy || roadmapDeliveryMode === 'rnd'}
-                        onClick={async () => {
-                          const ok = window.confirm(
-                            'Move this commitment to R&D Lab?\n\nThis will set Project Type to Internal and Delivery Mode to R&D.',
-                          )
-                          if (!ok) return
-                          await moveRoadmapCandidateToRnd(selectedRoadmapItem.id)
+
+              {/* ENTERPRISE COMMITMENT CONFIGURATION CONSOLE */}
+              <div style={{
+                maxWidth: '1600px',
+                margin: '0 auto',
+                padding: '0',
+              }}>
+                {/* Zone 3: Governance Actions (Top Right) */}
+                <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                  {!isLocked && (
+                    <button
+                      className="primary-btn"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void saveRoadmapCandidate(selectedRoadmapItem.id)}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: 'none',
+                        background: '#2563EB',
+                        color: 'white',
+                        cursor: busy ? 'not-allowed' : 'pointer',
+                        opacity: busy ? 0.6 : 1,
+                      }}
+                    >
+                      ✔ Save Updates
+                    </button>
+                  )}
+                  {!isLocked && canManageCommitments && (
+                    <button
+                      className="secondary-btn"
+                      type="button"
+                      disabled={busy || roadmapDeliveryMode === 'rnd'}
+                      onClick={async () => {
+                        const ok = window.confirm(
+                          'Move this commitment to R&D Lab?\n\nThis will set Project Type to Internal and Delivery Mode to R&D.',
+                        )
+                        if (!ok) return
+                        await moveRoadmapCandidateToRnd(selectedRoadmapItem.id)
+                      }}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: '1px solid #D1D5DB',
+                        background: 'white',
+                        color: '#374151',
+                        cursor: (busy || roadmapDeliveryMode === 'rnd') ? 'not-allowed' : 'pointer',
+                        opacity: (busy || roadmapDeliveryMode === 'rnd') ? 0.6 : 1,
+                      }}
+                    >
+                      → Move to R&D Lab
+                    </button>
+                  )}
+                  {!isLocked && (
+                    <button
+                      className="ghost-btn"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        if (!selectedRoadmapItem) return
+                        const weeks = Number(roadmapMove.tentative_duration_weeks)
+                        if (!Number.isFinite(weeks) || weeks <= 0) return
+                        const fe = Number(roadmapFeFte) || 0
+                        const be = Number(roadmapBeFte) || 0
+                        const ai = Number(roadmapAiFte) || 0
+                        const pm = Number(roadmapPmFte) || 0
+                        const fs = Number(roadmapFsFte) || 0
+                        if (fe + be + ai + pm + fs <= 0) return
+                        setCapacityValidationBusy(true)
+                        setCapacityValidationError('')
+                        validateCapacity({
+                          project_context: selectedRoadmapItem.project_context,
+                          tentative_duration_weeks: weeks,
+                          fe_fte: Math.max(0, fe),
+                          be_fte: Math.max(0, be),
+                          ai_fte: Math.max(0, ai),
+                          pm_fte: Math.max(0, pm),
+                          fs_fte: Math.max(0, fs),
+                          exclude_bucket_item_id: selectedRoadmapItem.id,
+                        })
+                          .then((res) => setCapacityValidation(res))
+                          .catch((err) => {
+                            setCapacityValidation(null)
+                            setCapacityValidationError(err instanceof Error ? err.message : 'Capacity validation failed')
+                          })
+                          .finally(() => setCapacityValidationBusy(false))
+                      }}
+                      style={{
+                        padding: '10px 20px',
+                        fontSize: '14px',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: '1px solid transparent',
+                        background: 'transparent',
+                        color: '#6B7280',
+                        cursor: busy ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      Validate Capacity
+                    </button>
+                  )}
+                </div>
+
+                {/* Main Grid: Zone 1 (65%) + Zone 2 (35%) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1.86fr 1fr', gap: '24px', marginBottom: '24px' }}>
+                  {/* Zone 1: Project Definition (Left 65%) */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '8px',
+                    padding: '24px',
+                  }}>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      color: '#111827',
+                      marginBottom: '20px',
+                      paddingBottom: '12px',
+                      borderBottom: '1px solid #E5E7EB',
+                    }}>
+                      Project Definition
+                    </div>
+
+                    {/* Title - Full Width */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
+                        Title
+                      </label>
+                      <input
+                        value={roadmapTitle}
+                        disabled={isLocked || busy}
+                        onChange={(e) => setRoadmapTitle(e.target.value)}
+                        placeholder="Refine commitment title"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          fontSize: '14px',
+                          borderRadius: '6px',
+                          border: '1px solid #D1D5DB',
+                          background: isLocked || busy ? '#F9FAFB' : 'white',
+                          color: '#111827',
                         }}
-                      >
-                        {roadmapDeliveryMode === 'rnd' ? 'Already in R&D Lab' : 'Move to R&D Lab'}
-                      </button>
-                    )}
+                      />
+                    </div>
+
+                    {/* Scope - Full Width, Large Textarea */}
+                    <div style={{ marginBottom: '16px' }}>
+                      <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
+                        Scope
+                      </label>
+                      <textarea
+                        rows={4}
+                        value={roadmapScope}
+                        disabled={isLocked || busy}
+                        onChange={(e) => setRoadmapScope(e.target.value)}
+                        placeholder="Refine commitment scope"
+                        style={{
+                          width: '100%',
+                          padding: '10px 12px',
+                          fontSize: '14px',
+                          borderRadius: '6px',
+                          border: '1px solid #D1D5DB',
+                          background: isLocked || busy ? '#F9FAFB' : 'white',
+                          color: '#111827',
+                          resize: 'vertical',
+                          fontFamily: 'inherit',
+                        }}
+                      />
+                    </div>
+
+                    {/* 3-Column Grid: Project Type / Delivery Mode / Initiative */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
+                          Project Type
+                        </label>
+                        <select
+                          value={roadmapProjectContext}
+                          disabled={isLocked || busy}
+                          onChange={(e) => setRoadmapProjectContext(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            fontSize: '14px',
+                            borderRadius: '6px',
+                            border: '1px solid #D1D5DB',
+                            background: isLocked || busy ? '#F9FAFB' : 'white',
+                            color: '#111827',
+                          }}
+                        >
+                          <option value="client">Client Project</option>
+                          <option value="internal">Internal Project</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
+                          Delivery Mode
+                        </label>
+                        <select
+                          value={roadmapDeliveryMode}
+                          disabled={isLocked || busy}
+                          onChange={(e) => setRoadmapDeliveryMode(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            fontSize: '14px',
+                            borderRadius: '6px',
+                            border: '1px solid #D1D5DB',
+                            background: isLocked || busy ? '#F9FAFB' : 'white',
+                            color: '#111827',
+                          }}
+                        >
+                          <option value="standard">Standard</option>
+                          <option value="rnd">R&D</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>
+                          Initiative
+                        </label>
+                        <select
+                          value={roadmapInitiativeType}
+                          disabled={isLocked || busy}
+                          onChange={(e) => setRoadmapInitiativeType(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 12px',
+                            fontSize: '14px',
+                            borderRadius: '6px',
+                            border: '1px solid #D1D5DB',
+                            background: isLocked || busy ? '#F9FAFB' : 'white',
+                            color: '#111827',
+                          }}
+                        >
+                          <option value="new_feature">New Feature</option>
+                          <option value="new_product">New Product</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Zone 2: Resource Commitment (Right 35%) */}
+                  <div style={{
+                    background: 'white',
+                    border: '1px solid #E5E7EB',
+                    borderRadius: '8px',
+                    padding: '24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: 600,
+                      color: '#111827',
+                      marginBottom: '20px',
+                      paddingBottom: '12px',
+                      borderBottom: '1px solid #E5E7EB',
+                    }}>
+                      Proposed Resource Allocation
+                    </div>
+
+                    {/* 5-Column FTE Grid */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '16px' }}>
+                        {[
+                          { role: 'FE', value: roadmapFeFte, setter: setRoadmapFeFte },
+                          { role: 'BE', value: roadmapBeFte, setter: setRoadmapBeFte },
+                          { role: 'AI', value: roadmapAiFte, setter: setRoadmapAiFte },
+                          { role: 'PM', value: roadmapPmFte, setter: setRoadmapPmFte },
+                          { role: 'FS', value: roadmapFsFte, setter: setRoadmapFsFte },
+                        ].map(({ role, value, setter }) => (
+                          <div key={role}>
+                            <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, color: '#6B7280', marginBottom: '6px', textAlign: 'center' }}>
+                              {role}
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              step="0.25"
+                              value={value}
+                              disabled={isLocked || busy}
+                              onChange={(e) => setter(e.target.value)}
+                              placeholder="0"
+                              style={{
+                                width: '100%',
+                                padding: '8px',
+                                fontSize: '14px',
+                                fontWeight: 600,
+                                borderRadius: '6px',
+                                border: '1px solid #D1D5DB',
+                                background: isLocked || busy ? '#F9FAFB' : 'white',
+                                color: '#111827',
+                                textAlign: 'center',
+                                fontFamily: 'monospace',
+                              }}
+                            />
+                            <div style={{ fontSize: '11px', color: '#9CA3AF', textAlign: 'center', marginTop: '4px' }}>FTE</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Capacity Validation Panel */}
+                    <div style={{
+                      flex: 1,
+                      padding: '16px',
+                      borderRadius: '8px',
+                      border: '2px solid',
+                      background: (() => {
+                        if (capacityValidationBusy) return '#FEF3C7'
+                        if (!capacityValidation) return '#F3F4F6'
+                        if (capacityValidation.status === 'APPROVED') return '#F0FDF4'
+                        return '#FEF2F2'
+                      })(),
+                      borderColor: (() => {
+                        if (capacityValidationBusy) return '#FBBF24'
+                        if (!capacityValidation) return '#D1D5DB'
+                        if (capacityValidation.status === 'APPROVED') return '#22C55E'
+                        return '#EF4444'
+                      })(),
+                    }}>
+                      <div style={{ fontSize: '14px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>
+                        Capacity Check Status
+                      </div>
+
+                      {capacityValidationBusy && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                          <div style={{
+                            width: '16px',
+                            height: '16px',
+                            borderRadius: '50%',
+                            border: '2px solid #FBBF24',
+                            borderTopColor: 'transparent',
+                            animation: 'spin 1s linear infinite',
+                          }} />
+                          <span style={{ fontSize: '13px', color: '#92400E' }}>Validating capacity...</span>
+                        </div>
+                      )}
+
+                      {!capacityValidationBusy && (
+                        <>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                            <div>
+                              <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '4px' }}>Requested</div>
+                              <div style={{ fontSize: '18px', fontWeight: 700, fontFamily: 'monospace', color: '#111827' }}>
+                                {(Number(roadmapFeFte || 0) + Number(roadmapBeFte || 0) + Number(roadmapAiFte || 0) + Number(roadmapPmFte || 0) + Number(roadmapFsFte || 0)).toFixed(2)} <span style={{ fontSize: '13px', fontWeight: 500, color: '#6B7280' }}>FTE</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: '12px', color: '#6B7280', marginBottom: '4px' }}>Status</div>
+                              <div style={{ fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {!capacityValidation ? (
+                                  <>
+                                    <span style={{ color: '#F59E0B' }}>🟡</span>
+                                    <span style={{ color: '#92400E' }}>Not evaluated</span>
+                                  </>
+                                ) : capacityValidation.status === 'APPROVED' ? (
+                                  <>
+                                    <span>✅</span>
+                                    <span style={{ color: '#166534' }}>Within capacity</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span>❌</span>
+                                    <span style={{ color: '#991B1B' }}>Exceeds limit</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {capacityValidation && capacityValidation.status !== 'APPROVED' && (
+                            <div style={{
+                              padding: '10px',
+                              borderRadius: '4px',
+                              background: '#FEF2F2',
+                              border: '1px solid #FECACA',
+                              fontSize: '12px',
+                              color: '#991B1B',
+                            }}>
+                              {capacityValidation.reason}
+                            </div>
+                          )}
+
+                          {capacityValidationError && (
+                            <div style={{
+                              padding: '10px',
+                              borderRadius: '4px',
+                              background: '#FEF2F2',
+                              border: '1px solid #FECACA',
+                              fontSize: '12px',
+                              color: '#991B1B',
+                            }}>
+                              {capacityValidationError}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <label>
-                  Title
-                  <input
-                    value={roadmapTitle}
-                    disabled={isLocked || busy}
-                    onChange={(e) => setRoadmapTitle(e.target.value)}
-                    placeholder="Refine commitment title"
-                  />
-                </label>
-                <label>
-                  Scope
-                  <textarea
-                    rows={3}
-                    value={roadmapScope}
-                    disabled={isLocked || busy}
-                    onChange={(e) => setRoadmapScope(e.target.value)}
-                    placeholder="Refine commitment scope"
-                  />
-                </label>
-                <div className="split-3">
-                  <label>
-                    Project Type
-                    <select
-                      value={roadmapProjectContext}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapProjectContext(e.target.value)}
-                    >
-                      <option value="client">Client Project</option>
-                      <option value="internal">Internal Project</option>
-                    </select>
-                  </label>
-                  <label>
-                    Delivery Mode
-                    <select
-                      value={roadmapDeliveryMode}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapDeliveryMode(e.target.value)}
-                    >
-                      <option value="standard">Standard</option>
-                      <option value="rnd">R&amp;D</option>
-                    </select>
-                  </label>
-                  <label>
-                    Initiative
-                    <select
-                      value={roadmapInitiativeType}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapInitiativeType(e.target.value)}
-                    >
-                      <option value="new_feature">New Feature</option>
-                      <option value="new_product">New Product</option>
-                    </select>
-                  </label>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '0.75rem' }}>
-                  <label>
-                    FE
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={roadmapFeFte}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapFeFte(e.target.value)}
-                      placeholder="FTE"
-                    />
-                  </label>
-                  <label>
-                    BE
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={roadmapBeFte}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapBeFte(e.target.value)}
-                      placeholder="FTE"
-                    />
-                  </label>
-                  <label>
-                    AI
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={roadmapAiFte}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapAiFte(e.target.value)}
-                      placeholder="FTE"
-                    />
-                  </label>
-                  <label>
-                    PM
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={roadmapPmFte}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapPmFte(e.target.value)}
-                      placeholder="FTE"
-                    />
-                  </label>
-                  <label>
-                    FS
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.25"
-                      value={roadmapFsFte}
-                      disabled={isLocked || busy}
-                      onChange={(e) => setRoadmapFsFte(e.target.value)}
-                      placeholder="FTE"
-                    />
-                  </label>
-                </div>
-                <div className="inline-note">
-                  <span>
-                    Capacity Validation: {capacityValidationBusy ? 'Checking...' : capacityValidation?.status || 'Not yet evaluated'}
-                  </span>
-                  {capacityValidation && (
-                    <span className={capacityValidation.status === 'APPROVED' ? 'success-text' : 'error-text'}>
-                      {capacityValidation.reason}
-                    </span>
-                  )}
-                  {capacityValidationError && <span className="error-text">{capacityValidationError}</span>}
-                </div>
+
+                {/* Capacity Meters (Full Width Below) */}
                 {capacityValidation && (
-                  <CapacityMeters
-                    title="Resource Availability Meter (After This Commitment)"
-                    utilization={capacityValidation.utilization_percentage}
-                  />
+                  <div style={{ marginBottom: '24px' }}>
+                    <CapacityMeters
+                      title="Resource Availability Meter (After This Commitment)"
+                      utilization={capacityValidation.utilization_percentage}
+                    />
+                  </div>
                 )}
-                <div className="line-item">
-                  <strong>Activities</strong>
-                  <button
-                    className="ghost-btn tiny"
-                    type="button"
-                    disabled={isLocked || busy}
-                    onClick={addRoadmapActivity}
-                  >
-                    + Add Activity
-                  </button>
-                </div>
-                <table className="activity-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th>Tags</th>
-                      <th>Activity</th>
-                      <th>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roadmapActivities.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="muted">
-                          No activities added yet.
-                        </td>
+
+                {/* Activities Section */}
+                <div style={{
+                  background: 'white',
+                  border: '1px solid #E5E7EB',
+                  borderRadius: '8px',
+                  padding: '24px',
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '16px',
+                    paddingBottom: '12px',
+                    borderBottom: '1px solid #E5E7EB',
+                  }}>
+                    <div style={{ fontSize: '18px', fontWeight: 600, color: '#111827' }}>
+                      Activities
+                    </div>
+                    <button
+                      className="ghost-btn tiny"
+                      type="button"
+                      disabled={isLocked || busy}
+                      onClick={addRoadmapActivity}
+                      style={{
+                        padding: '8px 16px',
+                        fontSize: '13px',
+                        fontWeight: 500,
+                        borderRadius: '6px',
+                        border: '1px solid #D1D5DB',
+                        background: 'white',
+                        color: '#374151',
+                      }}
+                    >
+                      + Add Activity
+                    </button>
+                  </div>
+
+                  <table className="activity-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '2px solid #E5E7EB' }}>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280', width: '50px' }}>#</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280' }}>Tags</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280' }}>Activity</th>
+                        <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: 600, color: '#6B7280', width: '100px' }}>Action</th>
                       </tr>
-                    )}
-                    {roadmapActivities.map((activity, idx) => {
-                      const parsed = parseActivityEntry(activity)
-                      return (
-                        <tr key={`${idx}-${activity}`}>
-                          <td>{idx + 1}</td>
-                          <td>
-                            <div className="activity-chip-row">
-                              {ACTIVITY_TAGS.map((tag) => {
-                                const active = parsed.tags.includes(tag)
-                                return (
-                                  <button
-                                    key={`${idx}-${tag}`}
-                                    className={`activity-tag-chip tag-${tag.toLowerCase()}${active ? ' active' : ' inactive'}`}
-                                    type="button"
-                                    disabled={isLocked || busy}
-                                    onClick={() => toggleRoadmapActivityTag(idx, tag)}
-                                  >
-                                    {tag}
-                                  </button>
-                                )
-                              })}
-                            </div>
-                          </td>
-                          <td>
-                            <input
-                              className="activity-input"
-                              value={parsed.text}
-                              disabled={isLocked || busy}
-                              onChange={(e) => updateRoadmapActivity(idx, e.target.value)}
-                              placeholder="Enter activity"
-                            />
-                          </td>
-                          <td>
-                            <button
-                              className="ghost-btn tiny"
-                              type="button"
-                              disabled={isLocked || busy}
-                              onClick={() => removeRoadmapActivity(idx)}
-                            >
-                              Remove
-                            </button>
+                    </thead>
+                    <tbody>
+                      {roadmapActivities.length === 0 && (
+                        <tr>
+                          <td colSpan={4} style={{ padding: '24px', textAlign: 'center', color: '#9CA3AF', fontSize: '14px' }}>
+                            No activities added yet.
                           </td>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                      )}
+                      {roadmapActivities.map((activity, idx) => {
+                        const parsed = parseActivityEntry(activity)
+                        return (
+                          <tr key={`${idx}-${activity}`} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                            <td style={{ padding: '12px', color: '#6B7280', fontSize: '13px' }}>{idx + 1}</td>
+                            <td style={{ padding: '12px' }}>
+                              <div className="activity-chip-row" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {ACTIVITY_TAGS.map((tag) => {
+                                  const active = parsed.tags.includes(tag)
+                                  return (
+                                    <button
+                                      key={`${idx}-${tag}`}
+                                      className={`activity-tag-chip tag-${tag.toLowerCase()}${active ? ' active' : ' inactive'}`}
+                                      type="button"
+                                      disabled={isLocked || busy}
+                                      onClick={() => toggleRoadmapActivityTag(idx, tag)}
+                                      style={{
+                                        padding: '4px 10px',
+                                        fontSize: '12px',
+                                        fontWeight: 500,
+                                        borderRadius: '4px',
+                                        border: '1px solid',
+                                        background: active ? 'white' : '#F3F4F6',
+                                        cursor: (isLocked || busy) ? 'not-allowed' : 'pointer',
+                                      }}
+                                    >
+                                      {tag}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <input
+                                className="activity-input"
+                                value={parsed.text}
+                                disabled={isLocked || busy}
+                                onChange={(e) => updateRoadmapActivity(idx, e.target.value)}
+                                placeholder="Enter activity"
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  fontSize: '14px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #D1D5DB',
+                                  background: (isLocked || busy) ? '#F9FAFB' : 'white',
+                                }}
+                              />
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <button
+                                className="ghost-btn tiny"
+                                type="button"
+                                disabled={isLocked || busy}
+                                onClick={() => removeRoadmapActivity(idx)}
+                                style={{
+                                  padding: '6px 12px',
+                                  fontSize: '12px',
+                                  fontWeight: 500,
+                                  borderRadius: '4px',
+                                  border: '1px solid #EF4444',
+                                  background: 'white',
+                                  color: '#EF4444',
+                                  cursor: (isLocked || busy) ? 'not-allowed' : 'pointer',
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </details>
 

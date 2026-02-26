@@ -30,7 +30,8 @@
       "Bash(ssh:*)",
       "Bash(gzip:*)",
       "Bash(scp:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(./deploy-vm.sh:*)"
     ]
   }
 }
