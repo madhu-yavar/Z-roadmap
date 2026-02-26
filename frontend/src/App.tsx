@@ -7219,7 +7219,7 @@ function RoadmapPage({
                           key={role}
                           style={{
                             display: 'grid',
-                            gridTemplateColumns: '32px 1fr 80px',
+                            gridTemplateColumns: '32px 1fr 100px',
                             gap: '12px',
                             alignItems: 'center',
                             padding: '8px 0',
@@ -7880,6 +7880,25 @@ function RoadmapAgentPage({
     if (computedTotalFte <= 0) return 0
     return Math.ceil(computedTotalFte * computedDurationWeeks)
   }, [computedTotalFte, computedDurationWeeks])
+
+  // Auto-populate end date when start date changes (based on tentative duration)
+  useEffect(() => {
+    if (!selectedPlan) return
+    if (!planStart) {
+      setPlanEnd('')
+      return
+    }
+    const durationWeeks = selectedPlan?.tentative_duration_weeks
+    if (!durationWeeks || durationWeeks <= 0) return
+
+    const start = new Date(planStart)
+    if (Number.isNaN(start.getTime())) return
+
+    const end = new Date(start)
+    end.setDate(end.getDate() + (durationWeeks * 7))
+
+    setPlanEnd(end.toISOString().split('T')[0])
+  }, [planStart, selectedPlan?.tentative_duration_weeks, selectedPlan])
 
   useEffect(() => {
     if (!selectedPlan) {
