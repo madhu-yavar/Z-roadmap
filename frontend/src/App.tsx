@@ -774,23 +774,61 @@ function parseActivityEntry(value: string): { text: string; tags: ActivityTag[] 
     .map((x) => x.trim().toUpperCase())
     .filter((x): x is ActivityTag => ACTIVITY_TAGS.includes(x as ActivityTag))
   const tags = Array.from(new Set(parsed))
-  return { text: (matched[2] || '').trim(), tags }
+  // Remove complexity suffix if present (e.g., " | Medium")
+  const textWithoutComplexity = (matched[2] || '').trim().replace(/\s*\|\s*(Simple|Medium|Complex)\s*$/, '')
+  return { text: textWithoutComplexity, tags }
 }
 
 function parseActivityWithComplexity(value: string): Activity {
-  const parsed = parseActivityEntry(value)
-  return {
-    text: parsed.text,
-    tags: parsed.tags,
-    complexity: 'Medium', // Default complexity
+  const raw = (value || '').trim()
+  const matched = raw.match(/^\[([^\]]+)\]\s*(.*)$/)
+
+  if (matched) {
+    // Extract tags from brackets
+    const parsed = matched[1]
+      .split(/[\/,\s|]+/)
+      .map((x) => x.trim().toUpperCase())
+      .filter((x): x is ActivityTag => ACTIVITY_TAGS.includes(x as ActivityTag))
+    const tags = Array.from(new Set(parsed))
+
+    // Extract text and complexity
+    const textAndComplexity = (matched[2] || '').trim()
+    const complexityMatch = textAndComplexity.match(/^(.*)\s*\|\s*(Simple|Medium|Complex)\s*$/)
+
+    if (complexityMatch) {
+      return {
+        text: complexityMatch[1].trim(),
+        tags,
+        complexity: complexityMatch[2] as ActivityComplexity,
+      }
+    }
+
+    return {
+      text: textAndComplexity,
+      tags,
+      complexity: 'Medium',
+    }
   }
+
+  // No tags found, check for complexity in text
+  const complexityMatch = raw.match(/^(.*)\s*\|\s*(Simple|Medium|Complex)\s*$/)
+  if (complexityMatch) {
+    return {
+      text: complexityMatch[1].trim(),
+      tags: [],
+      complexity: complexityMatch[2] as ActivityComplexity,
+    }
+  }
+
+  return { text: raw, tags: [], complexity: 'Medium' }
 }
 
 function formatActivityEntry(activity: Activity): string {
   const cleanText = (activity.text || '').trim()
   const cleanTags = Array.from(new Set(activity.tags.filter((t) => ACTIVITY_TAGS.includes(t))))
-  if (cleanTags.length === 0) return cleanText
-  return `[${cleanTags.join('/')}] ${cleanText}`
+  const complexity = activity.complexity || 'Medium'
+  if (cleanTags.length === 0) return `${cleanText} | ${complexity}`
+  return `[${cleanTags.join('/')}] ${cleanText} | ${complexity}`
 }
 
 function formatActivityEntryLegacy(text: string, tags: ActivityTag[]): string {

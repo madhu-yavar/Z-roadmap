@@ -21,7 +21,14 @@ WEEKLY_HOURS = 40
 
 
 def _parse_activities(activities: list[str]) -> dict:
-    """Parse activities and extract role tags and complexity."""
+    """Parse activities and extract role tags and complexity.
+
+    Supports format: "[TAG] Activity text | Complexity"
+    Examples:
+    - "[BE] Implement API | Medium"
+    - "[FE/BE] Build dashboard | Complex"
+    - "[AI] Train model | Simple"
+    """
     role_counts = {"FE": 0, "BE": 0, "AI": 0, "PM": 0, "FS": 0}
     complexity_counts = {"Simple": 0, "Medium": 0, "Complex": 0}
 
@@ -29,16 +36,31 @@ def _parse_activities(activities: list[str]) -> dict:
         # Default to Medium complexity
         complexity = "Medium"
 
-        # Extract role tags from format like "[FE/BE] Activity text"
+        # Extract role tags from format like "[FE/BE] Activity text | Complexity"
         tags = []
         if "[" in activity and "]" in activity:
             tag_part = activity.split("]")[0].replace("[", "")
             tags = [t.strip().upper() for t in tag_part.split("/") if t.strip()]
 
+            # Extract complexity from the part after the closing bracket
+            after_bracket = activity.split("]", 1)[1].strip()
+            # Check for complexity suffix like "| Medium", "| Complex", "| Simple"
+            for comp in ["Simple", "Medium", "Complex"]:
+                if f"| {comp}" in after_bracket or f"|{comp}" in after_bracket:
+                    complexity = comp
+                    break
+
         # Count by role
         for tag in tags:
             if tag in role_counts:
                 role_counts[tag] += 1
+
+        # If no tags found, check if activity has complexity suffix (legacy format)
+        if not tags:
+            for comp in ["Simple", "Medium", "Complex"]:
+                if f"| {comp}" in activity or f"|{comp}" in activity:
+                    complexity = comp
+                    break
 
         complexity_counts[complexity] += 1
 
