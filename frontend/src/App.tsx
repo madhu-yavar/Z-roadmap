@@ -750,7 +750,7 @@ function utilizationFromUsage(usage: RoleTotals, capacity: RoleTotals): Capacity
   return out
 }
 
-type ActivityTag = 'FE' | 'BE' | 'AI' | 'FS'
+type ActivityTag = 'FE' | 'BE' | 'AI'
 
 type ActivityComplexity = 'Simple' | 'Medium' | 'Complex'
 
@@ -760,7 +760,7 @@ interface Activity {
   complexity: ActivityComplexity
 }
 
-const ACTIVITY_TAGS: ActivityTag[] = ['FE', 'BE', 'AI', 'FS']
+const ACTIVITY_TAGS: ActivityTag[] = ['FE', 'BE', 'AI']
 
 const ACTIVITY_COMPLEXITY: ActivityComplexity[] = ['Simple', 'Medium', 'Complex']
 
@@ -5289,7 +5289,7 @@ function IntakePage({
       ? roadmapCandidate?.ImplementationActivityQuality
       : roadmapCandidate?.CommitmentActivityQuality
   const reviewRows = useMemo(() => {
-    const rank: Record<ActivityTag, number> = { FE: 0, BE: 1, AI: 2, FS: 3 }
+    const rank: Record<ActivityTag, number> = { FE: 0, BE: 1, AI: 2 }
     const rows = reviewActivities.map((activity, index) => {
       const parsed = parseActivityEntry(activity)
       const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(parsed.text || activity)]
