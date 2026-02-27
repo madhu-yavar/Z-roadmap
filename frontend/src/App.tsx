@@ -760,7 +760,7 @@ interface Activity {
   complexity: ActivityComplexity
 }
 
-const ACTIVITY_TAGS: ActivityTag[] = ['FE', 'BE', 'AI']
+const ACTIVITY_TAGS: ActivityTag[] = ['FE', 'BE', 'AI', 'FS']
 
 const ACTIVITY_COMPLEXITY: ActivityComplexity[] = ['Simple', 'Medium', 'Complex']
 

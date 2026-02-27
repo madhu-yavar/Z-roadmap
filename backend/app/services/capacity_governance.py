@@ -53,10 +53,35 @@ def _parse_plan_dates(start_date: str, end_date: str) -> tuple[datetime, datetim
 
 def _weekly_capacity(cfg: GovernanceConfig) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {"client": {}, "internal": {}, "rnd": {}}
+
+    # Calculate FS capacity once (can be used for both FE and BE)
+    fs_team = float(getattr(cfg, "team_fs") or 0.0)
+    fs_efficiency = float(getattr(cfg, "efficiency_fs") or 0.0)
+    fs_base_capacity = fs_team * fs_efficiency
+
     for portfolio in PORTFOLIOS:
         for role in ROLE_KEYS:
             team = float(getattr(cfg, f"team_{role}") or 0.0)
             efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+            base_capacity = team * efficiency
+
+            # FS engineers can work on both FE and BE tasks, so add FS capacity to both
+            if role in ("fe", "be"):
+                # Use per-role quota for FS if available, otherwise fall back to legacy global quota
+                fs_quota_attr = f"quota_fs_{portfolio}"
+                if hasattr(cfg, fs_quota_attr):
+                    fs_quota = float(getattr(cfg, fs_quota_attr) or 0.0)
+                else:
+                    if portfolio == "client":
+                        fs_quota = float(cfg.quota_client)
+                    elif portfolio == "internal":
+                        fs_quota = float(cfg.quota_internal)
+                    else:  # rnd
+                        fs_quota = 0.0
+                total_capacity = base_capacity + (fs_base_capacity * fs_quota)
+            else:
+                total_capacity = base_capacity
+
             # Use per-role quota if available, otherwise fall back to legacy global quota
             quota_attr = f"quota_{role}_{portfolio}"
             if hasattr(cfg, quota_attr):
@@ -69,7 +94,7 @@ def _weekly_capacity(cfg: GovernanceConfig) -> dict[str, dict[str, float]]:
                     quota = float(cfg.quota_internal)
                 else:  # rnd
                     quota = 0.0
-            out[portfolio][role] = max(0.0, team * efficiency * quota)
+            out[portfolio][role] = max(0.0, total_capacity * quota)
     return out
 
 

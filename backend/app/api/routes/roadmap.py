@@ -150,15 +150,41 @@ def _duration_weeks_from_dates(start_date: str, end_date: str) -> int:
 
 
 def _capacity_limit_pw(cfg: GovernanceConfig, portfolio: str, role: str) -> float:
-    team = float(getattr(cfg, f"team_{role}") or 0)
-    efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+    base_team = float(getattr(cfg, f"team_{role}") or 0)
+    base_efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+    base_capacity = base_team * base_efficiency
+
+    # FS engineers can work on both FE and BE tasks, so add FS capacity to both
+    fs_team = float(getattr(cfg, "team_fs") or 0)
+    fs_efficiency = float(getattr(cfg, "efficiency_fs") or 0.0)
+    fs_capacity = fs_team * fs_efficiency
+
+    # For FE and BE, include FS capacity
+    if role in ("fe", "be"):
+        total_capacity = base_capacity + fs_capacity
+    else:
+        total_capacity = base_capacity
+
     quota = float(cfg.quota_client if portfolio == "client" else cfg.quota_internal)
-    return max(0.0, team * efficiency * 52.0 * quota)
+    return max(0.0, total_capacity * 52.0 * quota)
 
 
 def _capacity_limit_weekly(cfg: GovernanceConfig, portfolio: str, role: str) -> float:
-    team = float(getattr(cfg, f"team_{role}") or 0)
-    efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+    base_team = float(getattr(cfg, f"team_{role}") or 0)
+    base_efficiency = float(getattr(cfg, f"efficiency_{role}") or 0.0)
+    base_capacity = base_team * base_efficiency
+
+    # FS engineers can work on both FE and BE tasks, so add FS capacity to both
+    fs_team = float(getattr(cfg, "team_fs") or 0)
+    fs_efficiency = float(getattr(cfg, "efficiency_fs") or 0.0)
+    fs_capacity = fs_team * fs_efficiency
+
+    # For FE and BE, include FS capacity
+    if role in ("fe", "be"):
+        total_capacity = base_capacity + fs_capacity
+    else:
+        total_capacity = base_capacity
+
     # Use per-role quota if available
     quota_attr = f"quota_{role}_{portfolio}"
     if hasattr(cfg, quota_attr):
@@ -171,7 +197,7 @@ def _capacity_limit_weekly(cfg: GovernanceConfig, portfolio: str, role: str) -> 
             quota = float(cfg.quota_internal)
         else:  # rnd
             quota = 0.0
-    return max(0.0, team * efficiency * quota)
+    return max(0.0, total_capacity * quota)
 
 
 def _week_key(dt: datetime) -> str:
