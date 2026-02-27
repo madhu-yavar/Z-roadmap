@@ -8311,10 +8311,22 @@ function RoadmapAgentPage({
     const start = new Date(planStart)
     if (Number.isNaN(start.getTime())) return
 
-    const end = new Date(start)
-    end.setDate(end.getDate() + (durationWeeks * 7))
+    // Calculate end date considering only work days (Monday-Friday)
+    // 1 week = 5 working days
+    const workingDays = durationWeeks * 5
+    let current = new Date(start)
+    let daysAdded = 0
 
-    setPlanEnd(end.toISOString().split('T')[0])
+    while (daysAdded < workingDays) {
+      current.setDate(current.getDate() + 1)
+      const dayOfWeek = current.getDay()
+      // Skip weekends (0 = Sunday, 6 = Saturday)
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        daysAdded++
+      }
+    }
+
+    setPlanEnd(current.toISOString().split('T')[0])
   }, [planStart, selectedPlan?.tentative_duration_weeks, selectedPlan])
 
   useEffect(() => {
