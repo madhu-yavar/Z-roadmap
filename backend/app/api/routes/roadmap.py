@@ -239,12 +239,14 @@ def _apply_plan_schedule(
     planning_status: str,
     confidence: str,
     dependency_ids: list[int],
+    portfolio_quota_override: str | None = None,
 ) -> None:
     total_fte = (
         _safe_non_negative(item.fe_fte)
         + _safe_non_negative(item.be_fte)
         + _safe_non_negative(item.ai_fte)
         + _safe_non_negative(item.pm_fte)
+        + _safe_non_negative(item.fs_fte)
     )
     item.planned_start_date = start_date
     item.planned_end_date = end_date
@@ -252,6 +254,7 @@ def _apply_plan_schedule(
     item.resource_count = math.ceil(total_fte) if total_fte > 0 else 0
     item.effort_person_weeks = math.ceil(total_fte * duration_weeks) if total_fte > 0 else 0
     item.planning_status = planning_status.strip().lower()
+    item.portfolio_quota_override = portfolio_quota_override
     item.confidence = confidence.strip().lower()
     item.dependency_ids = sorted(set(dependency_ids))
 
@@ -307,6 +310,7 @@ def _capacity_validate(
     proposed: dict[str, float],
     duration_weeks: int,
     exclude_bucket_item_id: int | None = None,
+    portfolio_quota_override: str | None = None,
 ) -> tuple[str, list[str], dict[str, str], str]:
     usage_pw = _current_usage_pw(db)
     if exclude_bucket_item_id:
@@ -322,8 +326,12 @@ def _capacity_validate(
     breach_roles: list[str] = []
     no_capacity_roles: list[str] = []
     utilization: dict[str, str] = {}
+
+    # Use override portfolio if specified
+    effective_portfolio = portfolio_quota_override or portfolio
+
     for role in ROLE_KEYS:
-        cap_pw = _capacity_limit_pw(governance, portfolio, role)
+        cap_pw = _capacity_limit_pw(governance, effective_portfolio, role)
         next_pw = usage_pw[portfolio][role] + _safe_non_negative(proposed.get(role, 0.0)) * duration_weeks
         if cap_pw <= 0:
             if next_pw <= 0:
@@ -334,7 +342,7 @@ def _capacity_validate(
                 no_capacity_roles.append(role.upper())
         else:
             util_pct = (next_pw / cap_pw) * 100.0
-            utilization[role.upper()] = f"{util_pct:.1f}%"
+            utilization[role.upper()] = f"{util_pct}%"
             if util_pct > 100.0 + 1e-9:
                 breach_roles.append(role.upper())
 
@@ -368,6 +376,7 @@ def _capacity_validate_timeline(
     planned_start_date: str,
     planned_end_date: str,
     exclude_bucket_item_id: int | None = None,
+    portfolio_quota_override: str | None = None,
 ) -> tuple[str, list[str], dict[str, str], str]:
     parsed = _parse_plan_dates(planned_start_date, planned_end_date)
     if not parsed:
@@ -406,10 +415,15 @@ def _capacity_validate_timeline(
                     breach_roles.append(role.upper())
                     breach_weeks[role.upper()] = wk
 
-    utilization = {
-        role.upper(): ("N/A" if no_capacity_breach[role] else f"{peak_utilization[role]:.1f}%")
-        for role in ROLE_KEYS
-    }
+    # Use override portfolio if specified
+    effective_portfolio = portfolio_quota_override or portfolio
+
+    utilization = {}
+    for role in ROLE_KEYS:
+        if no_capacity_breach[role]:
+            utilization[role.upper()] = "N/A"
+        else:
+            utilization[role.upper()] = f"{peak_utilization[role]}%"
     if breach_roles:
         exceeded_roles = [role for role in breach_roles if role not in no_capacity_roles]
         breach_detail = ", ".join(f"{r} ({breach_weeks.get(r, '-')})" for r in exceeded_roles)
@@ -950,6 +964,7 @@ def update_roadmap_plan_item(
         "be": _safe_non_negative(item.be_fte),
         "ai": _safe_non_negative(item.ai_fte),
         "pm": _safe_non_negative(item.pm_fte),
+        "fs": _safe_non_negative(item.fs_fte),
     }
     status, _, _, reason = _capacity_validate_timeline(
         db=db,
@@ -959,6 +974,7 @@ def update_roadmap_plan_item(
         planned_start_date=start_date,
         planned_end_date=end_date,
         exclude_bucket_item_id=item.bucket_item_id,
+        portfolio_quota_override=payload.portfolio_quota_override,
     )
     if status != "APPROVED":
         raise HTTPException(status_code=409, detail=reason)
@@ -971,6 +987,7 @@ def update_roadmap_plan_item(
         planning_status=payload.planning_status,
         confidence=payload.confidence,
         dependency_ids=payload.dependency_ids,
+        portfolio_quota_override=payload.portfolio_quota_override,
     )
     item.version_no = int(item.version_no or 1) + 1
 
@@ -1087,6 +1104,7 @@ def decide_roadmap_movement_request(
             planning_status=item.planning_status,
             confidence=item.confidence,
             dependency_ids=item.dependency_ids or [],
+            portfolio_quota_override=item.portfolio_quota_override,
         )
         item.version_no = int(item.version_no or 1) + 1
         request.executed_at = datetime.utcnow()
@@ -1147,6 +1165,7 @@ def ceo_move_roadmap_plan_item(
         planning_status=item.planning_status,
         confidence=item.confidence,
         dependency_ids=item.dependency_ids or [],
+        portfolio_quota_override=item.portfolio_quota_override,
     )
     item.version_no = int(item.version_no or 1) + 1
 

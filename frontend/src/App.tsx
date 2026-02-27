@@ -8224,7 +8224,15 @@ function RoadmapAgentPage({
       const d = new Date(item.planned_start_date)
       if (!Number.isNaN(d.getTime())) {
         const month = d.getMonth()
-        return `Q${Math.floor(month / 3) + 1}` as 'Q1' | 'Q2' | 'Q3' | 'Q4'
+        // Financial year: April (3) to March (2)
+        // April-June = Q1, July-Sept = Q2, Oct-Dec = Q3, Jan-Mar = Q4
+        if (month >= 3) {
+          // April to December: months 3-11
+          return `Q${Math.floor((month - 3) / 3) + 1}` as 'Q1' | 'Q2' | 'Q3' | 'Q4'
+        } else {
+          // January to March: months 0-2
+          return 'Q4'
+        }
       }
     }
     const p = `${item.pickup_period} ${item.completion_period}`.toUpperCase()

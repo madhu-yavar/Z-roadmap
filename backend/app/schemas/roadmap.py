@@ -108,6 +108,7 @@ class RoadmapPlanOut(BaseModel):
     pickup_period: str
     completion_period: str
     version_no: int
+    portfolio_quota_override: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -123,6 +124,7 @@ class RoadmapPlanUpdateIn(BaseModel):
     dependency_ids: list[int] = []
     change_reason: str = ""
     expected_version_no: int
+    portfolio_quota_override: str | None = None
 
 
 class CapacityValidateIn(BaseModel):

@@ -80,6 +80,7 @@ def _ensure_compat_columns() -> None:
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS confidence VARCHAR(20) NOT NULL DEFAULT 'medium'",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS dependency_ids JSON NOT NULL DEFAULT '[]'",
         "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS version_no INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE roadmap_plan_items ADD COLUMN IF NOT EXISTS portfolio_quota_override VARCHAR(20)",
         "ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_hash VARCHAR(64) NOT NULL DEFAULT ''",
         "CREATE INDEX IF NOT EXISTS ix_documents_file_hash ON documents (file_hash)",
         """

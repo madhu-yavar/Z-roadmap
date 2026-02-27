@@ -43,4 +43,5 @@ class RoadmapPlanItem(Base):
     pickup_period: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     completion_period: Mapped[str] = mapped_column(String(40), default="", nullable=False)
     version_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    portfolio_quota_override: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Allow using different portfolio quota
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

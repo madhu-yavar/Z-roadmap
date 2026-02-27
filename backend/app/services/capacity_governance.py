@@ -179,10 +179,10 @@ def build_capacity_governance_alert(
                     "status": "CRITICAL",
                     "portfolio": best_shortage["portfolio"],
                     "peak_week": best_shortage["peak_week"],
-                    "peak_demand_fte": round(best_shortage["peak_demand_fte"], 2),
-                    "capacity_fte": round(best_shortage["capacity_fte"], 2),
-                    "required_extra_fte": round(best_shortage["required_extra_fte"], 2),
-                    "peak_utilization_pct": round(best_shortage["peak_utilization_pct"], 1)
+                    "peak_demand_fte": best_shortage["peak_demand_fte"],
+                    "capacity_fte": best_shortage["capacity_fte"],
+                    "required_extra_fte": best_shortage["required_extra_fte"],
+                    "peak_utilization_pct": best_shortage["peak_utilization_pct"]
                     if best_shortage["capacity_fte"] > EPSILON
                     else None,
                 }
@@ -195,10 +195,10 @@ def build_capacity_governance_alert(
                     "status": "WARNING",
                     "portfolio": best_warning["portfolio"],
                     "peak_week": best_warning["peak_week"],
-                    "peak_demand_fte": round(best_warning["peak_demand_fte"], 2),
-                    "capacity_fte": round(best_warning["capacity_fte"], 2),
+                    "peak_demand_fte": best_warning["peak_demand_fte"],
+                    "capacity_fte": best_warning["capacity_fte"],
                     "required_extra_fte": 0.0,
-                    "peak_utilization_pct": round(best_warning["peak_utilization_pct"], 1),
+                    "peak_utilization_pct": best_warning["peak_utilization_pct"],
                 }
             )
         else:
@@ -217,7 +217,7 @@ def build_capacity_governance_alert(
 
     if shortage_roles:
         detail = ", ".join(
-            f"{alert['role']} (+{alert['required_extra_fte']:.1f} FTE)"
+            f"{alert['role']} (+{alert['required_extra_fte']} FTE)"
             for alert in role_alerts
             if alert["status"] == "CRITICAL"
         )
@@ -225,11 +225,11 @@ def build_capacity_governance_alert(
         status = "CRITICAL"
     elif warning_roles:
         detail = ", ".join(
-            f"{alert['role']} ({alert['peak_utilization_pct']:.1f}%)"
+            f"{alert['role']} ({alert['peak_utilization_pct']}%)"
             for alert in role_alerts
             if alert["status"] == "WARNING"
         )
-        message = f"Capacity risk nearing limit (>= {WARNING_UTILIZATION_THRESHOLD:.0f}%): {detail}."
+        message = f"Capacity risk nearing limit (>= {WARNING_UTILIZATION_THRESHOLD}%): {detail}."
         status = "WARNING"
     else:
         message = "Roadmap demand is within configured capacity limits."

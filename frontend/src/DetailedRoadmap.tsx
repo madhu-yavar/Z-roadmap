@@ -92,13 +92,22 @@ export function DetailedRoadmap({ roadmapPlanItems, governanceConfig, busy }: De
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set())
 
-  // Helper function to get quarter from date
+  // Helper function to get quarter from date (Financial Year: April-March)
+  // Q1 = Apr-Jun, Q2 = Jul-Sep, Q3 = Oct-Dec, Q4 = Jan-Mar
   const getQuarter = (dateStr: string): 'Q1' | 'Q2' | 'Q3' | 'Q4' | '' => {
     if (!dateStr) return ''
     const date = new Date(dateStr)
     if (Number.isNaN(date.getTime())) return ''
     const month = date.getMonth()
-    return `Q${Math.floor(month / 3) + 1}` as 'Q1' | 'Q2' | 'Q3' | 'Q4'
+    // Financial year: April (3) to March (2)
+    // April-June = Q1, July-Sept = Q2, Oct-Dec = Q3, Jan-Mar = Q4
+    if (month >= 3) {
+      // April to December: months 3-11
+      return `Q${Math.floor((month - 3) / 3) + 1}` as 'Q1' | 'Q2' | 'Q3' | 'Q4'
+    } else {
+      // January to March: months 0-2 (Q4 of previous year, but displayed as Q4)
+      return 'Q4'
+    }
   }
 
   // Decompose activities into tasks with time estimates
@@ -532,8 +541,21 @@ export function DetailedRoadmap({ roadmapPlanItems, governanceConfig, busy }: De
                       let widthPercent = 0
 
                       if (startDate && endDate && !Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
-                        const quarterStart = new Date(selectedYear, (parseInt(quarter[1]) - 1) * 3, 1)
-                        const quarterEnd = new Date(selectedYear, parseInt(quarter[1]) * 3, 0)
+                        // Financial year quarters: Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar
+                        let quarterStart: Date
+                        let quarterEnd: Date
+                        const qNum = parseInt(quarter[1])
+
+                        if (quarter === 'Q4') {
+                          // Q4 is Jan-Mar, belongs to financial year starting from previous April
+                          quarterStart = new Date(selectedYear, 0, 1) // January 1
+                          quarterEnd = new Date(selectedYear, 2, 31) // March 31
+                        } else {
+                          // Q1, Q2, Q3 are in the same calendar year
+                          const startMonth = (qNum - 1) * 3 + 3 // Q1 starts at April (month 3)
+                          quarterStart = new Date(selectedYear, startMonth, 1)
+                          quarterEnd = new Date(selectedYear, startMonth + 3, 0)
+                        }
 
                         const effectiveStart = startDate < quarterStart ? quarterStart : startDate
                         const effectiveEnd = endDate > quarterEnd ? quarterEnd : endDate
