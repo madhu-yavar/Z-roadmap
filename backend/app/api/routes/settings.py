@@ -32,7 +32,7 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 EFFICIENCY_MIN = 0.1
 EFFICIENCY_MAX = 1.0
-LOCK_WINDOW_HOURS = 3
+LOCK_WINDOW_MINUTES = 10
 TEAM_SIZE_MIN = 1
 
 
@@ -152,7 +152,7 @@ def update_governance_team_config(
     cfg.efficiency_pm = payload.efficiency_pm
     cfg.efficiency_fs = payload.efficiency_fs
     now_utc = datetime.utcnow()
-    cfg.team_locked_until = now_utc + timedelta(hours=LOCK_WINDOW_HOURS)
+    cfg.team_locked_until = now_utc + timedelta(minutes=LOCK_WINDOW_MINUTES)
     cfg.team_locked_by = current_user.id
     cfg.efficiency_confirmed_ceo_at = now_utc
     cfg.efficiency_confirmed_ceo_by = current_user.id
@@ -211,7 +211,7 @@ def update_governance_quotas(
     cfg.quota_fs_internal = payload.quota_fs_internal
     cfg.quota_fs_rnd = payload.quota_fs_rnd
 
-    cfg.quota_locked_until = datetime.utcnow() + timedelta(hours=LOCK_WINDOW_HOURS)
+    cfg.quota_locked_until = datetime.utcnow() + timedelta(minutes=LOCK_WINDOW_MINUTES)
     cfg.quota_locked_by = current_user.id
     cfg.updated_by = current_user.id
     db.add(cfg)

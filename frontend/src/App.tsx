@@ -8199,6 +8199,7 @@ function RoadmapAgentPage({
   const [planCapacityError, setPlanCapacityError] = useState('')
   const [movementReason, setMovementReason] = useState('')
   const [movementBlocker, setMovementBlocker] = useState('')
+  const [planJustSaved, setPlanJustSaved] = useState(false)
   const currentYear = new Date().getFullYear()
   const [yearView, setYearView] = useState(currentYear)
   const roadmapLocked = Boolean(governanceConfig?.roadmap_locked)
@@ -8451,6 +8452,11 @@ function RoadmapAgentPage({
       change_reason: movementReason.trim(),
       expected_version_no: selectedPlan.version_no,
     })
+    // Show success popup and disable save button
+    setPlanJustSaved(true)
+    setTimeout(() => {
+      alert('✅ Plan saved successfully!')
+    }, 100)
   }
 
   return (
@@ -8577,7 +8583,10 @@ function RoadmapAgentPage({
               key={item.id}
               type="button"
               className={`gantt-row${selectedPlanId === item.id ? ' active' : ''}`}
-              onClick={() => setSelectedPlanId(item.id)}
+              onClick={() => {
+                setSelectedPlanId(item.id)
+                setPlanJustSaved(false)
+              }}
             >
               <span className="gantt-row-title">{item.title}</span>
               <span className="gantt-row-track">
@@ -8702,6 +8711,7 @@ function RoadmapAgentPage({
               className="primary-btn"
               type="button"
               disabled={
+                planJustSaved ||
                 busy ||
                 !planStart ||
                 !planEnd ||
