@@ -750,7 +750,7 @@ function utilizationFromUsage(usage: RoleTotals, capacity: RoleTotals): Capacity
   return out
 }
 
-type ActivityTag = 'FE' | 'BE' | 'AI'
+type ActivityTag = 'FE' | 'BE' | 'AI' | 'FS'
 
 type ActivityComplexity = 'Simple' | 'Medium' | 'Complex'
 
