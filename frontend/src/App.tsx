@@ -5289,7 +5289,7 @@ function IntakePage({
       ? roadmapCandidate?.ImplementationActivityQuality
       : roadmapCandidate?.CommitmentActivityQuality
   const reviewRows = useMemo(() => {
-    const rank: Record<ActivityTag, number> = { FE: 0, BE: 1, AI: 2 }
+    const rank: Record<ActivityTag, number> = { FE: 0, BE: 1, AI: 2, FS: 3 }
     const rows = reviewActivities.map((activity, index) => {
       const parsed = parseActivityEntry(activity)
       const tags = parsed.tags.length ? parsed.tags : [inferActivityTag(parsed.text || activity)]
